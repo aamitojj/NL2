@@ -83,6 +83,13 @@ func connectSSH(password, passphrase string) (fingerprint string, firstTime bool
 		}
 		auths = append(auths, ssh.PublicKeys(signer))
 	}
+	if c.SSHKeyPath == "" && c.ManagedKey != "" {
+		// Dilreet's own key (created by "Remember this server" or when
+		// Dilreet created the server). Stored encrypted, never as a file.
+		if signer, err := ssh.ParsePrivateKey([]byte(secret(c.ManagedKey))); err == nil {
+			auths = append(auths, ssh.PublicKeys(signer))
+		}
+	}
 	if password != "" {
 		auths = append(auths, ssh.Password(password))
 		auths = append(auths, ssh.KeyboardInteractive(func(user, instr string, qs []string, echos []bool) ([]string, error) {
@@ -94,7 +101,7 @@ func connectSSH(password, passphrase string) (fingerprint string, firstTime bool
 		}))
 	}
 	if len(auths) == 0 {
-		return "", false, errors.New("enter the SSH password, or set a private key path")
+		return "", false, errors.New("enter the server's root password (or choose an SSH key file)")
 	}
 	var seenKey ssh.PublicKey
 	pinned := strings.TrimSpace(c.HostKey)
@@ -267,4 +274,40 @@ func dialRemote(addr string) (net.Conn, error) {
 		return nil, err
 	}
 	return client.Dial("tcp", addr)
+}
+
+// uploadSecret writes data to a new 0600 file in the SSH user's home folder
+// over SFTP and returns its absolute path. Used so secrets never appear on a
+// remote command line (where other processes could see them). The caller's
+// remote script must delete the file.
+func uploadSecret(data []byte) (string, error) {
+	client, _, _, err := sshS.get()
+	if err != nil {
+		return "", err
+	}
+	sc, err := sftp.NewClient(client)
+	if err != nil {
+		return "", fmt.Errorf("start SFTP: %w", err)
+	}
+	defer sc.Close()
+	home, err := sc.Getwd()
+	if err != nil || home == "" {
+		home = "/tmp"
+	}
+	p := strings.TrimRight(home, "/") + "/.dilreet-" + randHex(8)
+	f, err := sc.OpenFile(p, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		return "", fmt.Errorf("create %s: %w", p, err)
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		_ = sc.Remove(p)
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		_ = sc.Remove(p)
+		return "", err
+	}
+	return p, f.Close()
 }
