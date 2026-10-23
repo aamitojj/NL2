@@ -1,0 +1,3 @@
+hostpanel.exe
+*.exe.old
+/dist/
