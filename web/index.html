@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HostPanel</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <div class="brand">HostPanel <span id="ver" class="muted"></span></div>
+  <nav>
+    <a href="#setup" data-tab="setup">1. Setup</a>
+    <a href="#sites" data-tab="sites">2. Sites</a>
+    <a href="#guide" data-tab="guide">Guide</a>
+    <a href="#settings" data-tab="settings">Settings &amp; Updates</a>
+  </nav>
+  <div class="status"><span id="sshBadge" class="badge">SSH: off</span> <span id="apiBadge" class="badge">API: ?</span></div>
+</header>
+<main>
+
+<!-- ============ SETUP ============ -->
+<section id="tab-setup" class="tab">
+  <h1>Setup wizard</h1>
+  <p class="muted">Do these steps once. Not sure what a VPS is? Read the <a href="#guide">Guide</a> first.</p>
+
+  <div class="card">
+    <h2>Step 1 &mdash; Your server (VPS)</h2>
+    <p>Rent a Linux server (Ubuntu 24.04 LTS recommended) from Hetzner, DigitalOcean, etc. Your provider e-mails you its <b>IP address</b> and <b>root password</b> (or you add an SSH key).</p>
+    <div class="grid">
+      <label>Server IP address <input id="ip" placeholder="203.0.113.10"></label>
+      <label>SSH port <input id="port" type="number" value="22"></label>
+      <label>SSH user <input id="user" value="root"></label>
+      <label>Private key file (optional) <input id="keypath" placeholder="C:\Users\you\.ssh\id_ed25519"></label>
+    </div>
+    <button id="saveServer">Save server</button>
+    <hr>
+    <div class="grid">
+      <label>SSH password (or sudo password) <input id="pw" type="password" autocomplete="off"></label>
+      <label>Key passphrase (if your key has one) <input id="pp" type="password" autocomplete="off"></label>
+    </div>
+    <p class="muted small">Passwords are only kept in memory while HostPanel runs; they are never saved to disk.</p>
+    <button id="connect" class="primary">Connect</button>
+    <button id="disconnect">Disconnect</button>
+    <button id="forget" class="subtle">Forget host key</button>
+    <div id="hostkey" class="small muted"></div>
+    <pre id="serverInfo" class="hidden"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Step 2 &mdash; Install Coolify on the server</h2>
+    <p>Runs the official installer <code>curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash</code> on your server. Takes about 2&ndash;10 minutes. Skip if Coolify is already installed.</p>
+    <button id="install" class="primary">Install Coolify</button>
+    <pre id="installLog" class="log hidden"></pre>
+    <div id="afterInstall" class="note hidden">
+      <b>Do this now (important):</b>
+      <ol>
+        <li>Open <a id="coolifyLink" target="_blank" rel="noopener">http://YOUR-IP:8000</a> and <b>create the admin account</b>. The first person to open that page becomes admin, so do it right away.</li>
+        <li>In Coolify, open <b>Keys &amp; Tokens &rarr; API tokens</b>. (If you don't see it: <b>Settings &rarr; Advanced &rarr; enable API</b>.)</li>
+        <li>Create a token with permission <b>root</b> (or <b>write</b> + <b>deploy</b>). Copy it and paste it in step 3.</li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Step 3 &mdash; Connect HostPanel to Coolify</h2>
+    <div class="grid">
+      <label>Coolify URL <input id="curl" placeholder="http://203.0.113.10:8000"></label>
+      <label>API token <input id="ctoken" type="password" placeholder="paste token (leave empty to keep the saved one)" autocomplete="off"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="viassh"> Send API calls through the SSH connection (recommended while Coolify has no HTTPS domain; requires being connected)</label>
+    <p class="muted small" id="tokenNote"></p>
+    <button id="saveCoolify" class="primary">Save &amp; test</button>
+    <div id="coolifyResult"></div>
+  </div>
+</section>
+
+<!-- ============ SITES ============ -->
+<section id="tab-sites" class="tab hidden">
+  <h1>Sites</h1>
+  <div class="card">
+    <h2>New site</h2>
+    <div class="grid">
+      <label>Site name <input id="newName" placeholder="Bakery Smith"></label>
+      <label>Site id (a-z, 0-9, -) <input id="newSlug" placeholder="bakery-smith"></label>
+    </div>
+    <button id="createSite" class="primary">Create site</button>
+    <pre id="createLog" class="log hidden"></pre>
+  </div>
+  <div class="toolbar">
+    <input id="filter" placeholder="Search sites...">
+    <button id="refreshSites">Refresh</button>
+    <span id="siteCount" class="muted"></span>
+  </div>
+  <div id="sitesErr" class="err hidden"></div>
+  <table id="sitesTable">
+    <thead><tr><th>Site</th><th>Status</th><th>Address</th><th>Last deploy</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <div id="pager" class="toolbar"></div>
+
+  <div id="siteDetail" class="card hidden">
+    <h2 id="sdTitle"></h2>
+    <div class="cols">
+      <div>
+        <h3>Deploy files</h3>
+        <p class="small muted">Upload a .zip of your site, or a folder. It must contain <code>index.html</code> at the top (a single wrapper folder such as <code>dist/</code> is removed automatically).</p>
+        <label>Zip file <input type="file" id="zipFile" accept=".zip"></label>
+        <label>&hellip;or a folder <input type="file" id="dirFiles" webkitdirectory multiple></label>
+        <label>&hellip;or a path on this PC <input id="localPath" placeholder="C:\Sites\bakery\dist"></label>
+        <button id="deployBtn" class="primary">Deploy</button>
+        <pre id="deployLog" class="log hidden"></pre>
+        <h3>Releases</h3>
+        <button id="loadReleases">Show releases</button>
+        <ul id="releases"></ul>
+      </div>
+      <div>
+        <h3>Domain</h3>
+        <div class="grid">
+          <label>Domain <input id="domain" placeholder="example.com"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="www" checked> Also www.</label>
+        <button id="setDomain" class="primary">Set domain</button>
+        <div id="dnsBox" class="hidden">
+          <p>Add these records at your domain provider (DNS settings):</p>
+          <table class="dns"><thead><tr><th>Type</th><th>Name / Host</th><th>Value / Points to</th><th>TTL</th></tr></thead><tbody></tbody></table>
+          <div id="dnsStatus"></div>
+          <button id="checkDns">Check DNS now</button>
+          <label class="check"><input type="checkbox" id="autoApply" checked> Connect automatically once DNS is correct</label>
+          <button id="applyDomain">Connect domain now</button>
+        </div>
+        <h3>Other</h3>
+        <button id="restartSite">Redeploy container</button>
+        <button id="deleteSite" class="danger">Delete site</button>
+        <label class="check"><input type="checkbox" id="keepFiles"> keep files on server</label>
+        <pre id="otherLog" class="log hidden"></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ GUIDE ============ -->
+<section id="tab-guide" class="tab hidden">
+  <h1>Guide</h1>
+  <div class="card">
+    <h2>How it works</h2>
+    <p>Your websites live on <b>your own rented server (VPS)</b>. On that server, <a href="https://coolify.io" target="_blank" rel="noopener">Coolify</a> (free, open source) runs each site in a small container and gets free HTTPS certificates. HostPanel is the remote control on your PC: it installs Coolify, uploads your site files, and connects domains. GitHub is not needed.</p>
+  </div>
+  <div class="card">
+    <h2>1. Choose a server</h2>
+    <ul>
+      <li><b>Minimum for Coolify:</b> 2 CPU cores, 2 GB RAM, 10 GB disk (from the Coolify docs).</li>
+      <li><b>For about 100 static sites:</b> 4 vCPU, 8 GB RAM, 80+ GB SSD. Each site is one small nginx container (roughly 5&ndash;15 MB RAM each), plus Coolify itself (~1 GB). Example: Hetzner CPX31 / CX42 or a DigitalOcean 8 GB droplet.</li>
+      <li>Operating system: <b>Ubuntu 24.04 LTS</b> (or 22.04 LTS). Use a fresh server with nothing else on it.</li>
+      <li>Pick a data center close to your visitors.</li>
+      <li>Turn on the provider's automatic backups/snapshots.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>2. Firewall</h2>
+    <p>Allow incoming: <b>22</b> (SSH), <b>80</b> and <b>443</b> (websites), <b>8000</b> (Coolify dashboard; you can close it after you give Coolify its own HTTPS domain), and <b>6001</b>, <b>6002</b> (Coolify real-time updates).</p>
+  </div>
+  <div class="card">
+    <h2>3. Domains and DNS</h2>
+    <ul>
+      <li>Each customer buys a domain anywhere (Namecheap, GoDaddy, Cloudflare, TransIP, ...).</li>
+      <li>In the domain's <b>DNS settings</b> add an <b>A record</b>: Name <code>@</code>, Value = your server IP. For www add a second A record with Name <code>www</code>. HostPanel shows the exact records.</li>
+      <li>Delete old A/AAAA records for the same name that point somewhere else (for example the registrar's parking page).</li>
+      <li>On Cloudflare: set the records to <b>DNS only</b> (grey cloud) at least until HTTPS works.</li>
+      <li>DNS changes usually take minutes, sometimes a few hours. HostPanel checks automatically and connects the domain as soon as it points to your server. Coolify then requests a free Let's Encrypt certificate (HTTPS) within about a minute.</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>4. Deploying a site</h2>
+    <ol>
+      <li>Sites &rarr; <b>Create site</b>.</li>
+      <li>Choose a .zip or folder containing <code>index.html</code> and click <b>Deploy</b>. For React/Vue/Vite/Astro etc., build first (<code>npm run build</code>) and upload the output folder (<code>dist</code> or <code>build</code>).</li>
+      <li>Every deploy is kept as a release; you can switch back to one of the last 5.</li>
+    </ol>
+  </div>
+  <div class="card">
+    <h2>Troubleshooting</h2>
+    <dl>
+      <dt>SSH connection failed</dt><dd>Check the IP, that port 22 is open in the provider firewall, and the password. Some providers disable password login; use a key file instead (OpenSSH format; convert PuTTY .ppk with PuTTYgen &rarr; Conversions &rarr; Export OpenSSH key).</dd>
+      <dt>"Host key changed"</dt><dd>Normal if you reinstalled the server: click <i>Forget host key</i>. Otherwise do not continue.</dd>
+      <dt>Coolify API error 401 / "Invalid token"</dt><dd>Create a new token in Coolify (Keys &amp; Tokens) and save it again. Make sure the API is enabled (Settings &rarr; Advanced).</dd>
+      <dt>403 when creating a site</dt><dd>The token needs the <b>deploy</b> permission (or root) because sites mount a folder from the server.</dd>
+      <dt>Cannot reach Coolify</dt><dd>Port 8000 is blocked: open it in the firewall, or tick "Send API calls through the SSH connection".</dd>
+      <dt>Domain shows a certificate warning</dt><dd>Wait 1&ndash;2 minutes after connecting. Check that both A records point to the server and there's no AAAA record pointing elsewhere. In Coolify, check that the proxy (Servers &rarr; localhost &rarr; Proxy) is running.</dd>
+      <dt>404 / old content after deploy</dt><dd>Make sure <code>index.html</code> is in the top folder of your zip. Hard-refresh the browser (Ctrl+F5).</dd>
+      <dt>Site status "exited" or "degraded"</dt><dd>Click <i>Redeploy container</i>, then look at the deployment log in Coolify.</dd>
+    </dl>
+  </div>
+</section>
+
+<!-- ============ SETTINGS ============ -->
+<section id="tab-settings" class="tab hidden">
+  <h1>Settings &amp; Updates</h1>
+  <div class="card">
+    <h2>HostPanel app update</h2>
+    <p>Installed version: <b id="curVer"></b></p>
+    <label>Update manifest URL <input id="manifestUrl"></label>
+    <button id="saveManifest">Save</button>
+    <button id="checkUpdate" class="primary">Check for updates</button>
+    <div id="updateInfo"></div>
+    <pre id="updateLog" class="log hidden"></pre>
+  </div>
+  <div class="card">
+    <h2>Coolify update (on the server)</h2>
+    <p>Installed: <b id="coolifyVer">?</b> &middot; Latest: <b id="coolifyLatest">?</b></p>
+    <p class="small muted">Re-runs the official Coolify installer over SSH, which upgrades an existing installation to the latest version. Coolify can also update itself: Coolify dashboard &rarr; Settings &rarr; Updates. Make a server snapshot first.</p>
+    <button id="checkCoolify">Check versions</button>
+    <button id="upgradeCoolify" class="primary">Update Coolify now</button>
+    <pre id="upgradeLog" class="log hidden"></pre>
+  </div>
+  <div class="card">
+    <h2>About</h2>
+    <p class="small">Config file: <code id="cfgPath"></code></p>
+    <p class="small">All Coolify projects on this account: <button id="listProjects">List</button></p>
+    <ul id="projects" class="small"></ul>
+    <button id="quit" class="danger">Quit HostPanel</button>
+  </div>
+</section>
+</main>
+<div id="toast" class="hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
