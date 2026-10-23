@@ -164,7 +164,7 @@ func buildSiteTarball(entries []srcEntry) (string, int, int64, error) {
 	if !hasIndex {
 		return "", 0, 0, errors.New("no index.html found at the top level of the upload. Zip the folder that contains index.html (for built sites usually 'dist', 'build' or 'public')")
 	}
-	f, err := os.CreateTemp("", "hostpanel-site-*.tar.gz")
+	f, err := os.CreateTemp("", "dilreet-site-*.tar.gz")
 	if err != nil {
 		return "", 0, 0, err
 	}

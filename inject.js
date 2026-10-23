@@ -1,8 +1,8 @@
-/* HostPanel App Testing capture script. Injected only into pages served by
+/* Dilreet App Testing capture script. Injected only into pages served by
    the local preview server; never deployed. */
 (function () {
-  if (window.__hostpanelInjected) return;
-  window.__hostpanelInjected = true;
+  if (window.__dilreetInjected) return;
+  window.__dilreetInjected = true;
   var UI = "__HP_UI_ORIGIN__";
   var inFrame = window.parent !== window;
   var queue = [], timer = null;
@@ -13,10 +13,10 @@
     var body = JSON.stringify(queue.splice(0, 50));
     var sent = false;
     try {
-      if (navigator.sendBeacon) sent = navigator.sendBeacon("/__hostpanel/event", new Blob([body], { type: "text/plain" }));
+      if (navigator.sendBeacon) sent = navigator.sendBeacon("/__dilreet/event", new Blob([body], { type: "text/plain" }));
     } catch (e) {}
     if (!sent && window.__hpFetch) {
-      try { window.__hpFetch.call(window, "/__hostpanel/event", { method: "POST", body: body, keepalive: true }); } catch (e) {}
+      try { window.__hpFetch.call(window, "/__dilreet/event", { method: "POST", body: body, keepalive: true }); } catch (e) {}
     }
     if (queue.length) timer = setTimeout(flush, 200);
   }
@@ -70,7 +70,7 @@
     window.fetch = function (input, init) {
       var u = typeof input === "string" ? input : (input && input.url) || String(input);
       return origFetch.apply(this, arguments).then(function (r) {
-        if (!r.ok && u.indexOf("/__hostpanel/") < 0) send({ kind: "network", level: r.status >= 500 ? "error" : "warn", msg: "fetch " + r.status + " " + u });
+        if (!r.ok && u.indexOf("/__dilreet/") < 0) send({ kind: "network", level: r.status >= 500 ? "error" : "warn", msg: "fetch " + r.status + " " + u });
         return r;
       }, function (err) {
         send({ kind: "network", level: "error", msg: "fetch failed: " + u + " (" + err + ")" });
