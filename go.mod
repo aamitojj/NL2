@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
