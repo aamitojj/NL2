@@ -3,152 +3,40 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HostPanel</title>
+<meta name="color-scheme" content="light dark">
+<title>Dilreet</title>
 <link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="/static/icon.png">
+<script src="/static/theme.js"></script>
 </head>
 <body>
-<header>
-  <div class="brand">HostPanel <span id="ver" class="muted"></span></div>
-  <nav>
-    <a href="#setup" data-tab="setup">1. Setup</a>
-    <a href="#sites" data-tab="sites">2. Sites</a>
-    <a href="#testing" data-tab="testing">App Testing</a>
-    <a href="#guide" data-tab="guide">Guide</a>
-    <a href="#settings" data-tab="settings">Settings &amp; Updates</a>
+<a href="#main" class="skip">Skip to content</a>
+<aside aria-label="Dilreet">
+  <div class="brand"><img class="logo" src="/static/icon.png" alt="" aria-hidden="true"><span>Dilreet<small id="ver"></small></span></div>
+  <nav id="nav" aria-label="Main">
+    <a href="#/projects" data-route="projects"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg><span>Projects</span></a>
+    <a href="#/deploys" data-route="deploys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg><span>Deploys</span></a>
+    <a href="#/domains" data-route="domains"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg><span>Domains</span></a>
+    <a href="#/testing" data-route="testing"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 3h6M10 3v6L4 19a2 2 0 002 2h12a2 2 0 002-2l-6-10V3"/></svg><span>App Testing</span></a>
+    <a href="#/jiv" data-route="jiv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.6A8 8 0 1121 12z"/></svg><span>Jiv</span></a>
+    <a href="#/settings" data-route="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg><span>Settings</span></a>
   </nav>
-  <div class="status"><span id="sshBadge" class="badge">SSH: off</span> <span id="apiBadge" class="badge">API: ?</span></div>
-</header>
-<main>
-
-<!-- ============ SETUP ============ -->
-<section id="tab-setup" class="tab">
-  <h1>Setup wizard</h1>
-  <p class="muted">Do these steps once. Not sure what a VPS is? Read the <a href="#guide">Guide</a> first.</p>
-
-  <div class="card">
-    <h2>Step 1 &mdash; Your server (VPS)</h2>
-    <p>Rent a Linux server (Ubuntu 24.04 LTS recommended) from Hetzner, DigitalOcean, etc. Your provider e-mails you its <b>IP address</b> and <b>root password</b> (or you add an SSH key).</p>
-    <div class="grid">
-      <label>Server IP address <input id="ip" placeholder="203.0.113.10"></label>
-      <label>SSH port <input id="port" type="number" value="22"></label>
-      <label>SSH user <input id="user" value="root"></label>
-      <label>Private key file (optional) <input id="keypath" placeholder="C:\Users\you\.ssh\id_ed25519"></label>
-    </div>
-    <button id="saveServer">Save server</button>
-    <hr>
-    <div class="grid">
-      <label>SSH password (or sudo password) <input id="pw" type="password" autocomplete="off"></label>
-      <label>Key passphrase (if your key has one) <input id="pp" type="password" autocomplete="off"></label>
-    </div>
-    <p class="muted small">Passwords are only kept in memory while HostPanel runs; they are never saved to disk.</p>
-    <button id="connect" class="primary">Connect</button>
-    <button id="disconnect">Disconnect</button>
-    <button id="forget" class="subtle">Forget host key</button>
-    <div id="hostkey" class="small muted"></div>
-    <pre id="serverInfo" class="hidden"></pre>
+  <div class="side-bottom">
+    <a class="conn" id="connState" href="#/settings/server" title="Server connection"><span class="dot" id="connDot"></span><span class="lbl" id="connText">Not connected</span></a>
+    <button id="bell" aria-haspopup="true" aria-expanded="false" title="Notifications">&#128276; <span class="lbl">Notifications</span><span id="unread" class="count hidden"></span></button>
+    <button id="themeBtn" title="Switch light / dark theme">&#9681; <span class="lbl">Theme</span></button>
   </div>
-
-  <div class="card">
-    <h2>Step 2 &mdash; Install Coolify on the server</h2>
-    <p>Runs the official installer <code>curl -fsSL https://cdn.coollabs.io/coolify/install.sh | bash</code> on your server. Takes about 2&ndash;10 minutes. Skip if Coolify is already installed.</p>
-    <button id="install" class="primary">Install Coolify</button>
-    <pre id="installLog" class="log hidden"></pre>
-    <div id="afterInstall" class="note hidden">
-      <b>Do this now (important):</b>
-      <ol>
-        <li>Open <a id="coolifyLink" target="_blank" rel="noopener">http://YOUR-IP:8000</a> and <b>create the admin account</b>. The first person to open that page becomes admin, so do it right away.</li>
-        <li>In Coolify, open <b>Keys &amp; Tokens &rarr; API tokens</b>. (If you don't see it: <b>Settings &rarr; Advanced &rarr; enable API</b>.)</li>
-        <li>Create a token with permission <b>root</b> (or <b>write</b> + <b>deploy</b>). Copy it and paste it in step 3.</li>
-      </ol>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Step 3 &mdash; Connect HostPanel to Coolify</h2>
-    <div class="grid">
-      <label>Coolify URL <input id="curl" placeholder="http://203.0.113.10:8000"></label>
-      <label>API token <input id="ctoken" type="password" placeholder="paste token (leave empty to keep the saved one)" autocomplete="off"></label>
-    </div>
-    <label class="check"><input type="checkbox" id="viassh"> Send API calls through the SSH connection (recommended while Coolify has no HTTPS domain; requires being connected)</label>
-    <p class="muted small" id="tokenNote"></p>
-    <button id="saveCoolify" class="primary">Save &amp; test</button>
-    <div id="coolifyResult"></div>
-  </div>
-</section>
-
-<!-- ============ SITES ============ -->
-<section id="tab-sites" class="tab hidden">
-  <h1>Sites</h1>
-  <div class="card">
-    <h2>New site</h2>
-    <div class="grid">
-      <label>Site name <input id="newName" placeholder="Bakery Smith"></label>
-      <label>Site id (a-z, 0-9, -) <input id="newSlug" placeholder="bakery-smith"></label>
-    </div>
-    <button id="createSite" class="primary">Create site</button>
-    <pre id="createLog" class="log hidden"></pre>
-  </div>
-  <div class="toolbar">
-    <input id="filter" placeholder="Search sites...">
-    <button id="refreshSites">Refresh</button>
-    <span id="siteCount" class="muted"></span>
-  </div>
-  <div id="sitesErr" class="err hidden"></div>
-  <table id="sitesTable">
-    <thead><tr><th>Site</th><th>Status</th><th>Address</th><th>Last deploy</th><th></th></tr></thead>
-    <tbody></tbody>
-  </table>
-  <div id="pager" class="toolbar"></div>
-
-  <div id="siteDetail" class="card hidden">
-    <h2 id="sdTitle"></h2>
-    <div class="cols">
-      <div>
-        <h3>Deploy files</h3>
-        <p class="small muted">Upload a .zip of your site, or a folder. It must contain <code>index.html</code> at the top (a single wrapper folder such as <code>dist/</code> is removed automatically).</p>
-        <label>Zip file <input type="file" id="zipFile" accept=".zip"></label>
-        <label>&hellip;or a folder <input type="file" id="dirFiles" webkitdirectory multiple></label>
-        <label>&hellip;or a path on this PC <input id="localPath" placeholder="C:\Sites\bakery\dist"></label>
-        <button id="deployBtn" class="primary">Deploy</button>
-        <p class="small muted">Tip: try it on your PC first in <a href="#testing">App Testing</a> (preview, automatic checks, then "Deploy this version").</p>
-        <pre id="deployLog" class="log hidden"></pre>
-        <h3>Releases</h3>
-        <button id="loadReleases">Show releases</button>
-        <ul id="releases"></ul>
-      </div>
-      <div>
-        <h3>Domain</h3>
-        <div class="grid">
-          <label>Domain <input id="domain" placeholder="example.com"></label>
-        </div>
-        <label class="check"><input type="checkbox" id="www" checked> Also www.</label>
-        <button id="setDomain" class="primary">Set domain</button>
-        <div id="dnsBox" class="hidden">
-          <p>Add these records at your domain provider (DNS settings):</p>
-          <table class="dns"><thead><tr><th>Type</th><th>Name / Host</th><th>Value / Points to</th><th>TTL</th></tr></thead><tbody></tbody></table>
-          <div id="dnsStatus"></div>
-          <button id="checkDns">Check DNS now</button>
-          <label class="check"><input type="checkbox" id="autoApply" checked> Connect automatically once DNS is correct</label>
-          <button id="applyDomain">Connect domain now</button>
-        </div>
-        <h3>Other</h3>
-        <button id="restartSite">Redeploy container</button>
-        <button id="deleteSite" class="danger">Delete site</button>
-        <label class="check"><input type="checkbox" id="keepFiles"> keep files on server</label>
-        <pre id="otherLog" class="log hidden"></pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-
-<!-- ============ APP TESTING ============ -->
-<section id="tab-testing" class="tab hidden">
-  <h1>App Testing</h1>
-  <p class="muted">Test a site on this PC before it goes live. Nothing is uploaded until you click <b>Deploy this version</b>. <a href="#guide-testing">How it works</a></p>
+</aside>
+<main id="main" tabindex="-1">
+  <div id="banner" class="banner hidden" role="status"></div>
+  <div id="view" class="page"></div>
+<section id="view-testing" class="page wide hidden" aria-labelledby="testingTitle">
+  <div class="head"><h1 id="testingTitle">App Testing</h1><span class="grow"></span><a class="btn ghost sm" href="#/guide#guide-testing">How it works</a></div><div id="tPending" class="alert info hidden"></div>
+  <p class="muted">Test a site on this PC before it goes live. Nothing is uploaded until you click <b>Deploy this version</b>.</p>
   <div class="card" id="tLoader">
-    <h2>1. Load a site</h2>
-    <div class="grid">
+    <h2>1. Load a version</h2>
+    <div id="tDrop" class="drop compact" tabindex="0" role="button" aria-label="Drop a site folder or zip to test"><div class="big">Drop a folder or .zip here to test it</div><div class="muted small">or choose below</div></div>
+    <div class="grid3" style="margin-top:12px">
       <label>Zip file <input type="file" id="tZip" accept=".zip"></label>
       <label>&hellip;or a folder <input type="file" id="tDir" webkitdirectory multiple></label>
       <label>&hellip;or a path on this PC <input id="tPath" placeholder="C:\Sites\bakery\dist"></label>
@@ -181,17 +69,17 @@
         <input id="vpW" type="number" min="200" max="3840" class="num" title="width"> &times; <input id="vpH" type="number" min="200" max="3000" class="num" title="height">
         <button id="vpSet">Set</button>
         <button id="vpRotate" title="Swap width and height">Rotate</button>
-        <label class="check inline"><input type="checkbox" id="vpFit" checked> Shrink to fit</label>
+        <label class="check" style="margin:0"><input type="checkbox" id="vpFit" checked> Shrink to fit</label>
         <span id="vpLabel" class="muted"></span>
       </div>
       <div id="bExternal" class="note hidden small"></div>
       <div id="frameWrap"><div id="frameBox"><iframe id="pFrame" title="Site preview" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></div></div>
       <div class="consolehead">
         <b>Browser log</b>
-        <label class="check inline"><input type="radio" name="logf" value="problems" checked> Problems only</label>
-        <label class="check inline"><input type="radio" name="logf" value="all"> All requests</label>
+        <label class="check" style="margin:0"><input type="radio" name="logf" value="problems" checked> Problems only</label>
+        <label class="check" style="margin:0"><input type="radio" name="logf" value="all"> All requests</label>
         <span id="logCounts" class="muted small"></span>
-        <button id="logClear" class="subtle">Clear</button>
+        <button id="logClear" class="sm ghost">Clear</button>
       </div>
       <div id="tLog" class="console"></div>
     </div>
@@ -199,8 +87,8 @@
     <div class="card">
       <h2>3. Check report <span id="tSummary" class="small"></span></h2>
       <div class="toolbar">
-        <label class="check inline"><input type="checkbox" id="rShowPass"> Show passed checks</label>
-        <a id="rExport" class="button" href="/api/test/report" download>Export report (JSON)</a>
+        <label class="check" style="margin:0"><input type="checkbox" id="rShowPass"> Show passed checks</label>
+        <a id="rExport" class="btn sm" href="/api/test/report" download>Export report (JSON)</a>
         <button id="rNginx">Show production server config</button>
       </div>
       <div id="tReport"></div>
@@ -211,21 +99,38 @@
       <h2>4. Deploy this version</h2>
       <p class="small muted">Uploads exactly the files you tested (same fingerprint), with the same redirect and header rules, through the normal deployment (a new release you can roll back).</p>
       <div class="toolbar">
-        <select id="tSite"></select>
+        <select id="tSite" aria-label="Project to deploy to" style="max-width:360px"></select>
         <button id="tDeploy" class="primary" disabled>Deploy this version</button>
         <span id="tDeployNote" class="small muted"></span>
       </div>
-      <pre id="tDeployLog" class="log hidden"></pre>
+      <div id="tDeployLog"></div>
     </div>
   </div>
 </section>
 
-<!-- ============ GUIDE ============ -->
-<section id="tab-guide" class="tab hidden">
-  <h1>Guide</h1>
+
+</main>
+<div id="jivDock" class="jivdock">
+  <section id="jiv" class="jiv" aria-label="Jiv, your assistant">
+    <div class="jiv-panel">
+      <div class="jiv-head"><span class="jiv-av" aria-hidden="true">J</span><b>Jiv</b>
+        <select id="cModel" aria-label="AI model"><option value="">Jiv offline (built-in guide)</option></select><span id="cWhere" class="small"></span><span class="grow"></span>
+        <label class="check small" title="Lets Jiv see your projects, domains and server status (never passwords, keys or tokens)"><input type="checkbox" id="cCtx" checked> Include my status</label>
+        <a class="btn ghost sm" href="#/jiv" id="jFull" title="Open the Jiv page" aria-label="Open the Jiv page">&#10530;</a><button id="cClear" class="ghost sm" type="button" title="Clear chat" aria-label="Clear chat">&#128465;</button><button id="jMin" class="ghost sm" type="button" title="Minimize" aria-label="Minimize Jiv">&#8212;</button></div>
+      <div class="msgs" id="msgs" aria-live="polite"></div>
+      <div id="suggest" class="suggest"></div>
+    </div>
+    <form class="composer" id="cForm"><span class="jiv-av" aria-hidden="true">J</span><textarea id="cIn" rows="1" placeholder="Ask Jiv anything&hellip;" aria-label="Ask Jiv anything" aria-expanded="false"></textarea><button id="cSend" class="primary" type="submit">Send</button><button id="cStop" type="button" class="hidden">Stop</button></form>
+  </section>
+</div>
+<div id="noticePanel" class="notices hidden" role="dialog" aria-label="Notifications"></div>
+<div id="toasts" aria-live="polite" aria-atomic="false"></div>
+<div id="modalRoot"></div>
+<template id="tpl-guide"><div class="guide">
+  
   <div class="card">
     <h2>How it works</h2>
-    <p>Your websites live on <b>your own rented server (VPS)</b>. On that server, <a href="https://coolify.io" target="_blank" rel="noopener">Coolify</a> (free, open source) runs each site in a small container and gets free HTTPS certificates. HostPanel is the remote control on your PC: it installs Coolify, uploads your site files, and connects domains. GitHub is not needed.</p>
+    <p>Your websites live on <b>your own rented server (VPS)</b>. On that server, <a href="https://coolify.io" target="_blank" rel="noopener">Coolify</a> (free, open source) runs each site in a small container and gets free HTTPS certificates. Dilreet is the remote control on your PC: it sets up Coolify, uploads your site files, and connects domains. GitHub is optional (you can import from it, or just drag and drop).</p>
   </div>
   <div class="card">
     <h2>1. Choose a server</h2>
@@ -244,31 +149,32 @@
   <div class="card">
     <h2>3. Domains and DNS</h2>
     <ul>
-      <li>Each customer buys a domain anywhere (Namecheap, GoDaddy, Cloudflare, TransIP, ...).</li>
-      <li>In the domain's <b>DNS settings</b> add an <b>A record</b>: Name <code>@</code>, Value = your server IP. For www add a second A record with Name <code>www</code>. HostPanel shows the exact records.</li>
+      <li>Each customer buys a domain anywhere (GoDaddy, Namecheap, Porkbun, Hostinger, Squarespace, Cloudflare, ...). Dilreet detects the registrar and shows exact steps with a button that opens its DNS page; with a GoDaddy or Porkbun API key it creates the record itself, and "Fully automatic" moves DNS to a free Cloudflare account once.</li>
+      <li>In the domain's <b>DNS settings</b> add an <b>A record</b>: Name <code>@</code>, Value = your server IP. For www add a second A record with Name <code>www</code>. Dilreet shows the exact records.</li>
       <li>Delete old A/AAAA records for the same name that point somewhere else (for example the registrar's parking page).</li>
       <li>On Cloudflare: set the records to <b>DNS only</b> (grey cloud) at least until HTTPS works.</li>
-      <li>DNS changes usually take minutes, sometimes a few hours. HostPanel checks automatically and connects the domain as soon as it points to your server. Coolify then requests a free Let's Encrypt certificate (HTTPS) within about a minute.</li>
+      <li>DNS changes usually take minutes, sometimes a few hours. Dilreet checks automatically and connects the domain as soon as it points to your server. Coolify then requests a free Let's Encrypt certificate (HTTPS) within about a minute.</li>
     </ul>
   </div>
   <div class="card">
-    <h2>4. Deploying a site</h2>
+    <h2>4. Deploying a project</h2>
     <ol>
-      <li>Sites &rarr; <b>Create site</b>.</li>
-      <li>Choose a .zip or folder containing <code>index.html</code> and click <b>Deploy</b>. For React/Vue/Vite/Astro etc., build first (<code>npm run build</code>) and upload the output folder (<code>dist</code> or <code>build</code>).</li>
-      <li>Every deploy is kept as a release; you can switch back to one of the last 5.</li>
+      <li>Projects &rarr; <b>Add new project</b>, then drag your site folder or .zip onto the drop area, paste a GitHub/GitLab/Bitbucket/&hellip; link, or import from Netlify.</li>
+      <li>Dilreet detects the framework. Plain sites (an <code>index.html</code>) are published as they are. React/Vue/Vite/Astro sources can be built for you (one click, needs Node.js) or you can drop the built <code>dist</code>/<code>build</code> folder.</li>
+      <li>You get an instant address right away (<code>https://&lt;site&gt;.&lt;server-ip&gt;.sslip.io</code>); add your own domain whenever you like.</li>
+      <li>Every deploy is saved on this PC in <code>Documents\Dilreet\Projects\&lt;name&gt;</code>: <code>current</code> holds the latest files (edit them and click <b>Deploy from this folder</b> on the <b>Files</b> tab), <code>deploys</code> holds each deploy as a .zip that you can download, compare or publish again from the <b>Deploys</b> tab.</li>
     </ol>
   </div>
   <div class="card" id="guide-testing">
     <h2>5. Test before you deploy (App Testing)</h2>
     <ol>
-      <li>Open <a href="#testing">App Testing</a> and load the same zip, folder or path you would deploy. HostPanel unpacks it into a temporary folder on your PC and starts a private preview server (only this PC can open it).</li>
+      <li>Open <a href="#/testing">App Testing</a> and load the same zip, folder or path you would deploy. Dilreet unpacks it into a temporary folder on your PC and starts a private preview server (only this PC can open it).</li>
       <li>Click through the site in the built-in browser. Use the <b>Phone / Tablet / Desktop</b> buttons to see how it looks on other screens. JavaScript errors and files that fail to load appear in the <b>Browser log</b> under the preview.</li>
       <li>Read the <b>Check report</b>: <span class="pill fail">fail</span> means visitors will see something broken, <span class="pill warn">warn</span> is worth fixing, <span class="pill pass">pass</span> is fine. Each item says what is wrong and how to fix it.</li>
       <li>Fix problems in your files, then load again (or click <b>Reload from disk &amp; re-test</b> when you used a path on this PC).</li>
-      <li>Choose the site and click <b>Deploy this version</b>. It uploads exactly the tested files.</li>
+      <li>Choose the project and click <b>Deploy this version</b>. It uploads exactly the tested files.</li>
     </ol>
-    <p><b>Redirects and headers.</b> HostPanel understands Netlify's <code>_redirects</code>, <code>_headers</code> and <code>netlify.toml</code> files. The preview applies them, and every deployment turns them into the live web-server config, so the preview and the live site behave the same. Examples for <code>_redirects</code>:</p>
+    <p><b>Redirects and headers.</b> Dilreet understands Netlify's <code>_redirects</code>, <code>_headers</code> and <code>netlify.toml</code> files. The preview applies them, and every deployment turns them into the live web-server config, so the preview and the live site behave the same. Examples for <code>_redirects</code>:</p>
 <pre>
 # Single-page app (React, Vue, ...): every unknown address shows index.html
 /*            /index.html     200
@@ -284,55 +190,29 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 </pre>
-    <p class="small muted">Good to know: an existing file always wins over a rule unless you add <code>!</code> (e.g. <code>301!</code>). Addresses are case-sensitive online even though Windows ignores case. <code>/about</code> serves <code>about.html</code> automatically. HostPanel never runs <code>npm</code> or build commands: build on your PC first and test the output folder (<code>dist</code>, <code>build</code>&hellip;). Netlify Functions and Netlify Forms are not available.</p>
+    <p class="small muted">Good to know: an existing file always wins over a rule unless you add <code>!</code> (e.g. <code>301!</code>). Addresses are case-sensitive online even though Windows ignores case. <code>/about</code> serves <code>about.html</code> automatically. Dilreet only runs <code>npm install</code> / <code>npm run build</code> when you click <b>Build it for me</b> (it needs Node.js on this PC); otherwise build yourself and drop the output folder (<code>dist</code>, <code>build</code>&hellip;). Netlify Functions and Netlify Forms are not available.</p>
   </div>
   <div class="card">
     <h2>Troubleshooting</h2>
     <dl>
       <dt>SSH connection failed</dt><dd>Check the IP, that port 22 is open in the provider firewall, and the password. Some providers disable password login; use a key file instead (OpenSSH format; convert PuTTY .ppk with PuTTYgen &rarr; Conversions &rarr; Export OpenSSH key).</dd>
       <dt>"Host key changed"</dt><dd>Normal if you reinstalled the server: click <i>Forget host key</i>. Otherwise do not continue.</dd>
-      <dt>Coolify API error 401 / "Invalid token"</dt><dd>Create a new token in Coolify (Keys &amp; Tokens) and save it again. Make sure the API is enabled (Settings &rarr; Advanced).</dd>
+      <dt>Coolify API error 401 / "Invalid token"</dt><dd>If Dilreet set up the server, run Settings &rarr; Server &rarr; <i>Set up automatically</i> again; it creates a new token. Otherwise create a token in Coolify (Keys &amp; Tokens), and paste it in Settings &rarr; Server &rarr; <i>Use an existing Coolify</i>. Make sure the API is enabled (Settings &rarr; Advanced).</dd>
       <dt>403 when creating a site</dt><dd>The token needs the <b>deploy</b> permission (or root) because sites mount a folder from the server.</dd>
       <dt>Cannot reach Coolify</dt><dd>Port 8000 is blocked: open it in the firewall, or tick "Send API calls through the SSH connection".</dd>
       <dt>Domain shows a certificate warning</dt><dd>Wait 1&ndash;2 minutes after connecting. Check that both A records point to the server and there's no AAAA record pointing elsewhere. In Coolify, check that the proxy (Servers &rarr; localhost &rarr; Proxy) is running.</dd>
       <dt>404 / old content after deploy</dt><dd>Make sure <code>index.html</code> is in the top folder of your zip. Hard-refresh the browser (Ctrl+F5).</dd>
-      <dt>Redirect rules don't work on a site created with HostPanel 0.1</dt><dd>The first deployment with 0.2 adds the rules folder to the container and restarts it once (about a minute). If the log shows a warning, use <i>Redeploy container</i>.</dd>
+      <dt>Redirect rules don't work on a site created with Dilreet 0.1</dt><dd>The first deployment with 0.2 adds the rules folder to the container and restarts it once (about a minute). If the log shows a warning, use <i>Restart container</i>.</dd>
       <dt>"nginx rejected the generated config"</dt><dd>One of your rules could not be converted. The live site was not changed. App Testing &rarr; Check report &rarr; <i>Redirect and header rules</i> shows which line to fix.</dd>
-      <dt>Site status "exited" or "degraded"</dt><dd>Click <i>Redeploy container</i>, then look at the deployment log in Coolify.</dd>
+      <dt>Site status "exited" or "degraded"</dt><dd>Click <i>Restart container</i>, then look at the deployment log in Coolify.</dd>
+          <dt>Import from GitHub/GitLab fails with "private" or 404</dt><dd>Click <i>Connect account</i> and create a read-only token with the link shown; Dilreet stores it encrypted on this PC.</dd>
+      <dt>"This project must be built first"</dt><dd>Click <i>Build it for me</i> (needs Node.js LTS from nodejs.org) or build on your PC and drop the output folder.</dd>
+      <dt>Jiv says no AI is connected</dt><dd>Start a local AI app (Ollama, LM Studio, Jan, GPT4All, llama.cpp, LocalAI, vLLM, text-generation-webui) and click <i>Refresh</i>, or connect a provider in Settings &rarr; Connect AI. Offline, Jiv answers questions about Dilreet from its built-in guide.</dd>
     </dl>
   </div>
-</section>
+</div></template>
 
-<!-- ============ SETTINGS ============ -->
-<section id="tab-settings" class="tab hidden">
-  <h1>Settings &amp; Updates</h1>
-  <div class="card">
-    <h2>HostPanel app update</h2>
-    <p>Installed version: <b id="curVer"></b></p>
-    <label>Update manifest URL <input id="manifestUrl"></label>
-    <button id="saveManifest">Save</button>
-    <button id="checkUpdate" class="primary">Check for updates</button>
-    <div id="updateInfo"></div>
-    <pre id="updateLog" class="log hidden"></pre>
-  </div>
-  <div class="card">
-    <h2>Coolify update (on the server)</h2>
-    <p>Installed: <b id="coolifyVer">?</b> &middot; Latest: <b id="coolifyLatest">?</b></p>
-    <p class="small muted">Re-runs the official Coolify installer over SSH, which upgrades an existing installation to the latest version. Coolify can also update itself: Coolify dashboard &rarr; Settings &rarr; Updates. Make a server snapshot first.</p>
-    <button id="checkCoolify">Check versions</button>
-    <button id="upgradeCoolify" class="primary">Update Coolify now</button>
-    <pre id="upgradeLog" class="log hidden"></pre>
-  </div>
-  <div class="card">
-    <h2>About</h2>
-    <p class="small">Config file: <code id="cfgPath"></code></p>
-    <p class="small">All Coolify projects on this account: <button id="listProjects">List</button></p>
-    <ul id="projects" class="small"></ul>
-    <button id="quit" class="danger">Quit HostPanel</button>
-  </div>
-</section>
-</main>
-<div id="toast" class="hidden"></div>
+
 <script src="/static/app.js"></script>
 </body>
 </html>
