@@ -1,4 +1,4 @@
-// HostPanel: a Windows desktop control panel for a self-hosted, Netlify-like
+// Dilreet: a Windows desktop control panel for a self-hosted, Netlify-like
 // static hosting platform built on Coolify (https://coolify.io).
 package main
 
@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -35,49 +36,128 @@ var (
 )
 
 func main() {
-	port := flag.Int("port", 8787, "local port for the web UI (0 = random)")
-	noBrowser := flag.Bool("no-browser", false, "do not open the browser automatically")
+	port := flag.Int("port", 8787, "local port for the UI (0 = random)")
+	noBrowser := flag.Bool("no-browser", false, "browser mode: do not open the browser automatically")
 	printToken := flag.Bool("print-url", true, "print the UI address with its session key")
+	forceBrowser := flag.Bool("browser", false, "use the default web browser instead of the Dilreet window")
+	afterUpdate := flag.Bool("after-update", false, "internal: started by the self-updater")
+	debug := flag.Bool("debug", false, "enable WebView2 developer tools and context menu")
 	flag.Parse()
+
+	platformInit()
+	wait := time.Duration(0)
+	if *afterUpdate {
+		wait = 20 * time.Second
+	}
+	if !acquireInstanceLock(wait) {
+		// Dilreet is already running: bring it to the front and leave.
+		if err := signalRunningInstance(); err != nil {
+			showInfo("Dilreet is already running. Look for its window in the taskbar.")
+		}
+		return
+	}
 
 	if err := loadConfig(); err != nil {
 		log.Printf("warning: could not read config: %v", err)
 	}
 	cleanupOldBinary()
 	cleanupStaleWorkspaces()
+	ensureProjects() // gives sites from older versions a project folder
 
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(*port))
 	if err != nil {
 		ln, err = net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
+			showInfo("Dilreet could not start its local server: " + err.Error())
 			log.Fatal(err)
 		}
 	}
 	listenAddr = ln.Addr().String()
 	httpServer = &http.Server{Handler: routes(), ReadHeaderTimeout: 20 * time.Second}
+	uiURL = fmt.Sprintf("http://%s/?k=%s", listenAddr, sessionToken)
 
-	u := fmt.Sprintf("http://%s/?k=%s", listenAddr, sessionToken)
+	// Decide between the native window and the browser fallback.
+	appMode = modeBrowser
+	if isNativePlatform() && !*forceBrowser {
+		ver, verr := webView2Status()
+		if ver != "" {
+			appMode = modeNative
+		} else {
+			detail := ""
+			if verr != nil {
+				detail = " (" + verr.Error() + ")"
+			}
+			switch askNoWebView2(detail) {
+			case "download":
+				openBrowser(webview2DownloadURL)
+				appModeReason = "WebView2 is not installed; using the browser until it is."
+			case "browser":
+				appModeReason = "WebView2 is not installed; you chose browser mode."
+			default:
+				return
+			}
+		}
+	} else if *forceBrowser {
+		appModeReason = "started with -browser"
+	}
+
 	p, _ := configPath()
-	fmt.Printf("HostPanel %s (%s)\nConfig: %s\n", Version, osName(), p)
-	if *printToken {
-		fmt.Printf("Open: %s\n", u)
+	fmt.Printf("Dilreet %s (%s, %s mode)\nConfig: %s\n", Version, osName(), appMode, p)
+	if *printToken && appMode == modeBrowser {
+		fmt.Printf("Open: %s\n", uiURL)
 	}
-	fmt.Println("Keep this window open while you use HostPanel. Close it (or click Quit in the app) to stop.")
+	writeInstanceFile()
+	if envOr("NO_BACKGROUND") == "" {
+		startBackground(context.Background())
+	}
+	go func() {
+		if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("server error: %v", err)
+			shutdown()
+		}
+	}()
+
+	if appMode == modeNative {
+		if err := runNativeWindow(uiURL, *debug); err != nil {
+			log.Printf("native window failed: %v; falling back to the browser", err)
+			appMode, appModeReason = modeBrowser, "the Dilreet window could not be created: "+err.Error()
+		} else {
+			shutdown() // window closed by the user
+			return
+		}
+	}
+	// Browser mode.
+	if hasConsole() {
+		fmt.Println("Keep this window open while you use Dilreet. Close it (or click Quit in the app) to stop.")
+	} else {
+		go idleWatchdog(15 * time.Minute)
+	}
 	if !*noBrowser {
-		go func() { time.Sleep(300 * time.Millisecond); openBrowser(u) }()
+		go func() { time.Sleep(300 * time.Millisecond); openBrowser(uiURL) }()
 	}
-	if err := httpServer.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		log.Fatal(err)
-	}
+	select {}
 }
 
+var shutdownOnce sync.Once
+
 func shutdown() {
-	sshS.close()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	stopTest()
-	_ = httpServer.Shutdown(ctx)
-	os.Exit(0)
+	shutdownOnce.Do(func() {
+		if closeNativeWindow() {
+			time.Sleep(400 * time.Millisecond) // let the window save its placement
+		}
+		sshS.close()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		stopTest()
+		stopOllamaPull()
+		for _, id := range stagedIDs() {
+			dropStaged(id)
+		}
+		_ = httpServer.Shutdown(ctx)
+		removeInstanceFile()
+		os.Exit(0)
+	})
+	select {} // another goroutine is shutting down
 }
 
 func openBrowser(u string) {
@@ -130,11 +210,15 @@ func guard(next http.Handler) http.Handler {
 		}
 		// The UI must never be framed (clickjacking) and only loads its own code.
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src http://localhost:* http://127.0.0.1:* http://[::1]:*; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src http://localhost:* http://127.0.0.1:*; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		if r.URL.Path == "/__hp/focus" && r.Method == http.MethodPost {
+			handleFocus(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			// Requests must come from HostPanel's own page, never from another
+			// Requests must come from Dilreet's own page, never from another
 			// site or from a page shown in the App Testing preview.
 			if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
 				writeJSON(w, http.StatusForbidden, map[string]any{"error": "cross-site request blocked"})
@@ -146,13 +230,14 @@ func guard(next http.Handler) http.Handler {
 			}
 			ck, err := r.Cookie("hp_session")
 			if err != nil || subtle.ConstantTimeCompare([]byte(ck.Value), []byte(sessionToken)) != 1 {
-				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired: close this tab and use the address printed in the HostPanel window"})
+				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired: close this tab and use the address printed in the Dilreet window"})
 				return
 			}
-			if r.Method != http.MethodGet && r.Header.Get("X-HostPanel") != "1" {
-				writeJSON(w, http.StatusForbidden, map[string]any{"error": "missing X-HostPanel header"})
+			if r.Method != http.MethodGet && r.Header.Get("X-Dilreet") != "1" {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "missing X-Dilreet header"})
 				return
 			}
+			lastUIContact.Store(time.Now().Unix())
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -174,9 +259,15 @@ func routes() http.Handler {
 		fileServer.ServeHTTP(w, r)
 	})
 	mux.Handle("GET /static/", http.StripPrefix("/static/", fileServer))
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/icon.png", http.StatusMovedPermanently)
+	})
 
 	mux.HandleFunc("GET /api/state", apiState)
+	registerAutomationRoutes(mux)
 	registerTestRoutes(mux)
+	registerProjectRoutes(mux)
+	registerRegistrarRoutes(mux)
 	mux.HandleFunc("POST /api/server", apiSaveServer)
 	mux.HandleFunc("POST /api/ssh/connect", apiSSHConnect)
 	mux.HandleFunc("POST /api/ssh/disconnect", func(w http.ResponseWriter, r *http.Request) {
@@ -193,7 +284,10 @@ func routes() http.Handler {
 			writeErr(w, errNotConnected)
 			return
 		}
-		j := newJob("install", func(j *Job) error { return installCoolifyJob(j, false) })
+		var o SetupOptions
+		o.RememberKey = true
+		_ = readJSON(r, &o) // body is optional
+		j := newJob("install", func(j *Job) error { return setupServerJob(j, o) })
 		writeJSON(w, 200, map[string]any{"job": j.ID})
 	})
 	mux.HandleFunc("POST /api/coolify", apiSaveCoolify)
@@ -659,7 +753,7 @@ func saveUpload(fh *multipart.FileHeader) (string, error) {
 		return "", err
 	}
 	defer src.Close()
-	f, err := os.CreateTemp("", "hostpanel-upload-*.zip")
+	f, err := os.CreateTemp("", "dilreet-upload-*.zip")
 	if err != nil {
 		return "", err
 	}
@@ -775,6 +869,9 @@ func apiApplyDomain(w http.ResponseWriter, r *http.Request) {
 	if s.IncludeWWW {
 		domains += ",https://www." + s.Domain
 	}
+	if s.InstantURL != "" {
+		domains += "," + s.InstantURL // keep the free address working too
+	}
 	if err := api.SetDomains(s.AppUUID, domains, req.Force); err != nil {
 		writeErr(w, err)
 		return
@@ -787,7 +884,7 @@ func apiApplyDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = withConfig(func(c *Config) error {
 		if x := findSite(c, slug); x != nil {
-			x.DomainLive = true
+			x.DomainLive, x.PendingNS = true, nil
 		}
 		return nil
 	})

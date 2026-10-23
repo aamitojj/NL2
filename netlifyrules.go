@@ -112,7 +112,7 @@ func compileFrom(from string) (string, error) {
 		return "", fmt.Errorf("bad %%-encoding")
 	}
 	if unsafeForConfig(dec) {
-		return "", fmt.Errorf("contains characters HostPanel can't use (spaces, quotes, $, {, }, ;, #, \\)")
+		return "", fmt.Errorf("contains characters Dilreet can't use (spaces, quotes, $, {, }, ;, #, \\)")
 	}
 	segs := strings.Split(strings.TrimPrefix(dec, "/"), "/")
 	// Drop a trailing empty segment ("/blog/" == "/blog").
@@ -171,7 +171,7 @@ func compileHeaderFor(p string) (string, error) {
 		return "", fmt.Errorf("bad %%-encoding")
 	}
 	if unsafeForConfig(dec) {
-		return "", fmt.Errorf("contains characters HostPanel can't use (spaces, quotes, $, {, }, ;, #, \\)")
+		return "", fmt.Errorf("contains characters Dilreet can't use (spaces, quotes, $, {, }, ;, #, \\)")
 	}
 	var b strings.Builder
 	b.WriteString("^")
@@ -213,7 +213,7 @@ func (s *SiteRules) addRedirect(r *RedirectRule) {
 		return
 	}
 	if r.Status == 307 || r.Status == 308 || r.Status == 303 {
-		s.issue("warn", src, r.Line, fmt.Sprintf("Status %d works on HostPanel but Netlify itself doesn't support it.", r.Status), "Use 301 or 302 if you also deploy to Netlify.")
+		s.issue("warn", src, r.Line, fmt.Sprintf("Status %d works on Dilreet but Netlify itself doesn't support it.", r.Status), "Use 301 or 302 if you also deploy to Netlify.")
 	}
 	reSrc, err := compileFrom(r.From)
 	if err != nil {
@@ -226,11 +226,11 @@ func (s *SiteRules) addRedirect(r *RedirectRule) {
 		return
 	}
 	if unsafeForConfig(r.To) {
-		s.issue("fail", src, r.Line, fmt.Sprintf("Target %q contains characters HostPanel can't use.", r.To), "Remove spaces, quotes, $, {, }, ; and backslashes (%-encode them instead).")
+		s.issue("fail", src, r.Line, fmt.Sprintf("Target %q contains characters Dilreet can't use.", r.To), "Remove spaces, quotes, $, {, }, ; and backslashes (%-encode them instead).")
 		return
 	}
 	if external && r.Status == 200 {
-		s.issue("warn", src, r.Line, fmt.Sprintf("Proxy rule %s -> %s is ignored: HostPanel serves static files and doesn't proxy.", r.From, r.To), "Call the external URL directly from your page, or use a 301/302 redirect.")
+		s.issue("warn", src, r.Line, fmt.Sprintf("Proxy rule %s -> %s is ignored: Dilreet serves static files and doesn't proxy.", r.From, r.To), "Call the external URL directly from your page, or use a 301/302 redirect.")
 		return
 	}
 	if (r.Status == 404 || r.Status == 410) && !external && targetTokenRe.MatchString(r.To) {
@@ -346,7 +346,7 @@ func (s *SiteRules) parseRedirectsFile(text, src string) {
 			}
 		}
 		if len(query) > 0 {
-			s.issue("warn", src, ln, fmt.Sprintf("Query-parameter rule %s %s is ignored.", r.From, strings.Join(query, " ")), "HostPanel only matches on the path. Use a path-based rule instead.")
+			s.issue("warn", src, ln, fmt.Sprintf("Query-parameter rule %s %s is ignored.", r.From, strings.Join(query, " ")), "Dilreet only matches on the path. Use a path-based rule instead.")
 			continue
 		}
 		if i < len(f) {
@@ -456,7 +456,7 @@ func (s *SiteRules) parseNetlifyTOML(text, src string) {
 			rr.Status = 301
 		}
 		if len(r.Query) > 0 {
-			s.issue("warn", label, 0, fmt.Sprintf("Query-parameter rule for %s is ignored.", r.From), "HostPanel only matches on the path.")
+			s.issue("warn", label, 0, fmt.Sprintf("Query-parameter rule for %s is ignored.", r.From), "Dilreet only matches on the path.")
 			continue
 		}
 		if len(r.Conditions) > 0 {
@@ -464,7 +464,7 @@ func (s *SiteRules) parseNetlifyTOML(text, src string) {
 			continue
 		}
 		if r.Signed != "" || len(r.Headers) > 0 {
-			s.issue("warn", label, 0, fmt.Sprintf("Proxy options (headers/signed) on %s are ignored.", r.From), "HostPanel doesn't proxy requests.")
+			s.issue("warn", label, 0, fmt.Sprintf("Proxy options (headers/signed) on %s are ignored.", r.From), "Dilreet doesn't proxy requests.")
 		}
 		s.addRedirect(rr)
 	}
