@@ -1,52 +1,62 @@
-name: Build HostPanel
-
+name: build
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Vet and test
+        with: { go-version-file: go.mod }
+      - name: Decode binary assets
+        shell: bash
         run: |
-          go vet ./...
-          go test ./...
-
-      - name: Build Windows exe
-        env:
-          GOOS: windows
-          GOARCH: amd64
-          CGO_ENABLED: '0'
-        run: go build -trimpath -ldflags "-s -w" -o hostpanel.exe .
-
-      - name: Checksum
-        run: sha256sum hostpanel.exe | tee hostpanel.exe.sha256
-
-      - name: Upload exe
-        uses: actions/upload-artifact@v4
+          base64 -d assets/web_icon.png.b64 > web/icon.png
+          base64 -d assets/winres_icon.ico.b64 > winres/icon.ico
+          base64 -d assets/winres_icon.png.b64 > winres/icon.png
+      - run: gofmt -l . | tee /dev/stderr | (! read)
+      - run: go vet ./... && GOOS=windows go vet ./...
+      - run: go test -race ./...
+  windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod }
+      - name: Decode binary assets
+        shell: bash
+        run: |
+          base64 -d assets/web_icon.png.b64 > web/icon.png
+          base64 -d assets/winres_icon.ico.b64 > winres/icon.ico
+          base64 -d assets/winres_icon.png.b64 > winres/icon.png
+      - name: Version
+        shell: bash
+        run: |
+          v="${GITHUB_REF_NAME#v}"; [[ "$GITHUB_REF_TYPE" == tag ]] || v="0.3.0"
+          echo "VER=$v" >> "$GITHUB_ENV"
+      - name: Generate icon/version resource (go-winres)
+        shell: bash
+        run: go run github.com/tc-hib/go-winres@v0.3.3 make --in winres/winres.json --arch amd64 --out rsrc
+      - name: Build dilreet.exe
+        shell: bash
+        env: { GOOS: windows, GOARCH: amd64, CGO_ENABLED: "0" }
+        run: go build -trimpath -ldflags "-s -w -H=windowsgui -X main.Version=$VER" -o dilreet.exe .
+      - name: Installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\iscc.exe" "/DAppVersion=$env:VER" installer\dilreet.iss
+      - name: Checksums
+        shell: bash
+        run: sha256sum dilreet.exe dist/Dilreet-Setup-*.exe > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
         with:
-          name: hostpanel-windows
+          name: dilreet-${{ env.VER }}
           path: |
-            hostpanel.exe
-            hostpanel.exe.sha256
-
-      - name: Publish release (on version tags)
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            hostpanel.exe
-            hostpanel.exe.sha256
+            dilreet.exe
+            dist/Dilreet-Setup-*.exe
+            SHA256SUMS.txt
