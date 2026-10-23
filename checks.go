@@ -110,7 +110,7 @@ func runChecks(ws *Workspace) *Report {
 	// Order of the report.
 	idx := c.add("index", "Home page (index.html)", "Visitors who open your domain get index.html from the top of the published folder.", "Put index.html at the top level of the folder or zip you upload (or set publish in netlify.toml).")
 	c.add("publish", "Published folder", "", "")
-	c.add("source", "Built output, not source code", "Sites made with React, Vue, Vite and similar tools must be built first. HostPanel serves files as they are and never runs npm.", "Run your build (usually npm run build) and test/deploy the output folder (dist, build, out…), or set publish in netlify.toml.")
+	c.add("source", "Built output, not source code", "Sites made with React, Vue, Vite and similar tools must be built first. Dilreet serves files as they are and never runs npm.", "Run your build (usually npm run build) and test/deploy the output folder (dist, build, out…), or set publish in netlify.toml.")
 	links := c.add("links", "Internal links", "Links (<a href>) to pages of your own site that don't exist give visitors a 404 page.", "Fix the link target or add the missing page. Paths are relative to the page unless they start with /.")
 	assets := c.add("assets", "Images, scripts and styles", "Files the page loads itself (src, srcset, stylesheets, CSS url(), icons, fonts). Missing ones show as broken images, unstyled pages or a broken app.", "Upload the missing file or correct the path.")
 	cased := c.add("case", "Upper/lower case in file names", "Your PC (Windows) ignores upper/lower case in file names, the web server does not: Logo.PNG and logo.png are different files online, so a link that works on your PC can 404 after deploying.", "Make the link and the file name match exactly. Lower-case file names are easiest.")
@@ -123,10 +123,10 @@ func runChecks(ws *Workspace) *Report {
 	c.add("lang", "Page language", "<html lang=\"…\"> tells screen readers, translators and search engines the language.", "Change <html> to <html lang=\"en\"> (or your language code).")
 	c.add("charset", "Character encoding", "Without <meta charset=\"utf-8\"> accents and symbols can show as garbage.", "Add <meta charset=\"utf-8\"> as the first thing inside <head>.")
 	c.add("favicon", "Favicon", "The small icon in browser tabs. Without one browsers request /favicon.ico and get a 404.", "Add favicon.ico to the top level, or <link rel=\"icon\" href=\"/icon.png\"> in <head>.")
-	rules := c.add("rules", "Redirect and header rules", "Rules from _redirects, _headers and netlify.toml. HostPanel applies them in this preview and converts them into the production web-server config on deploy.", "See each item; the syntax is the same as Netlify's.")
+	rules := c.add("rules", "Redirect and header rules", "Rules from _redirects, _headers and netlify.toml. Dilreet applies them in this preview and converts them into the production web-server config on deploy.", "See each item; the syntax is the same as Netlify's.")
 	c.add("spa", "Single-page app routing", "Apps with client-side routing need every unknown path to return index.html, otherwise refreshing or sharing a deep link (/about) gives a 404.", "Add a file named _redirects containing:  /*  /index.html  200")
 	secrets := c.add("secrets", "Private files", "Everything in the published folder is downloadable by anyone. Environment files, keys and credentials must never be uploaded.", "Remove these files from the upload and rotate any passwords or keys they contain.")
-	c.add("netlify", "Netlify-only features", "HostPanel serves static files with Netlify's redirect and header rules, but not Netlify's server features.", "")
+	c.add("netlify", "Netlify-only features", "Dilreet serves static files with Netlify's redirect and header rules, but not Netlify's server features.", "")
 	c.add("notfound", "Custom 404 page", "A 404.html at the top level is shown for addresses that don't exist.", "Add a friendly 404.html with a link back home.")
 
 	// index.html
@@ -247,7 +247,7 @@ func (c *checker) checkPublish() {
 		src.item(st, "package.json", 0, fmt.Sprintf("This looks like %s source code (package.json is in the published folder). Run %s and test the output folder instead.", p.Framework, cmd))
 	}
 	if p.TomlCommand != "" {
-		src.item("info", "netlify.toml", 0, fmt.Sprintf("netlify.toml has build command %q. HostPanel doesn't run it; build on your PC and upload the result.", p.TomlCommand))
+		src.item("info", "netlify.toml", 0, fmt.Sprintf("netlify.toml has build command %q. Dilreet doesn't run it; build on your PC and upload the result.", p.TomlCommand))
 	}
 }
 
@@ -526,7 +526,7 @@ func (c *checker) scanCSSFile(f string) {
 }
 
 func (c *checker) netlifyForm(f string, line int) {
-	c.res["netlify"].item("warn", f, line, "This form uses Netlify Forms (data-netlify / netlify attribute). Submissions are handled by Netlify's servers and will not work on HostPanel; use a form service (Formspree, Basin, …) or your own backend.")
+	c.res["netlify"].item("warn", f, line, "This form uses Netlify Forms (data-netlify / netlify attribute). Submissions are handled by Netlify's servers and will not work on Dilreet; use a form service (Formspree, Basin, …) or your own backend.")
 }
 
 var winPathRe = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
@@ -828,7 +828,7 @@ func (c *checker) checkNetlify() {
 	r := c.res["netlify"]
 	p := c.ws.Project
 	if p.FunctionsDir != "" {
-		r.item("warn", p.FunctionsDir, 0, "Netlify Functions / Edge Functions found. They don't run on HostPanel; anything calling /.netlify/functions/… will fail.")
+		r.item("warn", p.FunctionsDir, 0, "Netlify Functions / Edge Functions found. They don't run on Dilreet; anything calling /.netlify/functions/… will fail.")
 	}
 	for _, f := range c.ws.Files.sorted() {
 		if strings.HasPrefix(f, ".netlify/") {
