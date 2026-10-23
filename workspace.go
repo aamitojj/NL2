@@ -81,6 +81,8 @@ type Workspace struct {
 	FileCount   int         `json:"files"`
 	Bytes       int64       `json:"bytes"`
 	Loaded      time.Time   `json:"loaded"`
+
+	restoreOf string // set when re-publishing an archived deploy (no new archive)
 }
 
 func (w *Workspace) Close() {
@@ -114,7 +116,7 @@ func newWorkspace(entries []srcEntry, source string) (*Workspace, error) {
 	if total > maxSiteBytes {
 		return nil, fmt.Errorf("site is too large (%d MB, max %d MB)", total>>20, maxSiteBytes>>20)
 	}
-	dir, err := os.MkdirTemp("", "hostpanel-test-*")
+	dir, err := os.MkdirTemp("", "dilreet-test-*")
 	if err != nil {
 		return nil, err
 	}

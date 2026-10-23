@@ -3,8 +3,8 @@ package main
 // The App Testing preview server: a separate HTTP server on 127.0.0.1 /
 // [::1] with a random port that serves one Workspace with Netlify-style
 // rules. It has no API routes and is served from the "other" loopback name
-// (localhost vs 127.0.0.1) than the HostPanel UI, so previewed pages are
-// cross-site to HostPanel and never receive or send its session cookie.
+// (localhost vs 127.0.0.1) than the Dilreet UI, so previewed pages are
+// cross-site to Dilreet and never receive or send its session cookie.
 
 import (
 	"bytes"
@@ -202,7 +202,7 @@ var headOpenRe = regexp.MustCompile(`(?i)<head(\s[^>]*)?>`)
 var htmlOpenRe = regexp.MustCompile(`(?i)<html(\s[^>]*)?>`)
 var frameAncestorsRe = regexp.MustCompile(`(?i)(^|;)\s*frame-ancestors[^;]*`)
 
-const injectTag = `<script src="/__hostpanel/inject.js"></script>`
+const injectTag = `<script src="/__dilreet/inject.js"></script>`
 
 // injectInto adds the capture script as early as possible in the document.
 func injectInto(b []byte) []byte {
@@ -228,13 +228,13 @@ func (ps *PreviewServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden host", http.StatusForbidden)
 		return
 	}
-	if strings.HasPrefix(r.URL.Path, "/__hostpanel/") {
+	if strings.HasPrefix(r.URL.Path, "/__dilreet/") {
 		ps.serveInternal(w, r)
 		return
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		ps.log.add(TestEvent{Kind: "request", Level: "warn", Method: r.Method, URL: r.URL.RequestURI(), Status: 405,
-			Msg: r.Method + " is not allowed on a static site (forms and APIs need a backend; Netlify Forms are not available on HostPanel)"})
+			Msg: r.Method + " is not allowed on a static site (forms and APIs need a backend; Netlify Forms are not available on Dilreet)"})
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "405 method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -271,7 +271,7 @@ func (ps *PreviewServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ps.log.add(ev)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(res.Status)
-		fmt.Fprintf(w, "<!doctype html><title>%d</title><p>%d — Not Found (HostPanel preview: the site has no 404.html)</p>", res.Status, res.Status)
+		fmt.Fprintf(w, "<!doctype html><title>%d</title><p>%d — Not Found (Dilreet preview: the site has no 404.html)</p>", res.Status, res.Status)
 		return
 	}
 	if res.Via != "" || res.File != strings.TrimPrefix(p, "/") {
@@ -315,7 +315,7 @@ func (ps *PreviewServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // writeHeaders applies _headers / netlify.toml rules, with the same default
 // Cache-Control the production config uses. Anti-framing headers are relaxed
-// only here so the page can be shown inside HostPanel's browser.
+// only here so the page can be shown inside Dilreet's browser.
 func (ps *PreviewServer) writeHeaders(w http.ResponseWriter, p string) {
 	h := w.Header()
 	h.Set("Cache-Control", defaultCacheControl)
@@ -324,7 +324,7 @@ func (ps *PreviewServer) writeHeaders(w http.ResponseWriter, p string) {
 		val := kv[1]
 		switch strings.ToLower(name) {
 		case "x-frame-options":
-			ps.log.once("xfo", TestEvent{Kind: "info", Level: "info", Msg: "The site sends X-Frame-Options: " + val + ". It is ignored in the preview so the page can show inside HostPanel; it still applies when deployed."})
+			ps.log.once("xfo", TestEvent{Kind: "info", Level: "info", Msg: "The site sends X-Frame-Options: " + val + ". It is ignored in the preview so the page can show inside Dilreet; it still applies when deployed."})
 			continue
 		case "content-security-policy":
 			if frameAncestorsRe.MatchString(val) {
@@ -358,11 +358,11 @@ func trunc(s string, n int) string {
 func (ps *PreviewServer) serveInternal(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	switch {
-	case r.URL.Path == "/__hostpanel/inject.js" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
+	case r.URL.Path == "/__dilreet/inject.js" && (r.Method == http.MethodGet || r.Method == http.MethodHead):
 		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 		js := strings.Replace(injectJS, "__HP_UI_ORIGIN__", ps.uiOrigin, 1)
 		io.WriteString(w, js)
-	case r.URL.Path == "/__hostpanel/event" && r.Method == http.MethodPost:
+	case r.URL.Path == "/__dilreet/event" && r.Method == http.MethodPost:
 		// Only the previewed pages themselves may report.
 		if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" {
 			http.Error(w, "forbidden", http.StatusForbidden)
