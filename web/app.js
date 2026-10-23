@@ -57,10 +57,15 @@ async function withBtn(btn, fn) {
 
 // ---------------- tabs ----------------
 function showTab() {
-  const t = (location.hash || "#setup").slice(1);
+  let t = (location.hash || "#setup").slice(1);
+  let anchor = null;
+  if (t.startsWith("guide-")) { anchor = t; t = "guide"; }
+  document.querySelector("main").classList.toggle("wide", t === "testing");
   document.querySelectorAll(".tab").forEach(s => s.classList.toggle("hidden", s.id !== "tab-" + t));
   document.querySelectorAll("nav a").forEach(a => a.classList.toggle("active", a.dataset.tab === t));
   if (t === "sites") loadSites();
+  if (t === "testing") testTabShown();
+  if (anchor) { const el = document.getElementById(anchor); if (el) setTimeout(() => el.scrollIntoView(), 0); }
 }
 window.addEventListener("hashchange", showTab);
 
@@ -309,6 +314,278 @@ $("#listProjects").onclick = (e) => withBtn(e.target, async () => {
   $("#projects").innerHTML = p.map(x => `<li>${esc(x.name)} <span class="muted">${esc(x.uuid)} ${esc(x.description || "")}</span></li>`).join("") || "<li>none</li>";
 });
 $("#quit").onclick = async () => { if (confirm("Quit HostPanel?")) { await api("POST", "/api/quit"); document.body.innerHTML = "<main><h1>HostPanel has stopped.</h1><p>You can close this tab.</p></main>"; } };
+
+
+// ---------------- app testing ----------------
+let test = null;          // state from /api/test
+let previewOrigin = "";
+let logFrom = 0, logItems = [], logTimer = null;
+let vp = { w: 1280, h: 800, full: false };
+let lastNav = "";
+
+function testTabShown() {
+  loadSites().then(fillSiteSelect);
+  api("GET", "/api/test").then(renderTest).catch(e => toast(e.message, true));
+}
+
+function fillSiteSelect() {
+  const sel = $("#tSite");
+  const prev = sel.value || current || "";
+  sel.innerHTML = `<option value="">Choose a site&hellip;</option>` + sites.map(s => `<option value="${esc(s.slug)}">${esc(s.name)} (${esc(s.slug)})${s.domain ? " - " + esc(s.domain) : ""}</option>`).join("");
+  if (prev && sites.some(s => s.slug === prev)) sel.value = prev;
+  updateDeployBtn();
+}
+$("#tSite").onchange = updateDeployBtn;
+
+function updateDeployBtn() {
+  const ok = !!(test && test.active && $("#tSite").value);
+  $("#tDeploy").disabled = !ok;
+  const n = test && test.active ? (test.report.counts.fail || 0) : 0;
+  $("#tDeployNote").textContent = !test || !test.active ? "Load and test a site first." :
+    !$("#tSite").value ? "Choose the site to deploy to." :
+    n ? `${n} check(s) failed: you will be asked to confirm.` : "All checks passed or only warnings.";
+}
+
+function renderTest(t) {
+  const first = !test || !t.active || !test.active || test.id !== t.id;
+  test = t;
+  const active = !!t.active;
+  $("#tMain").classList.toggle("hidden", !active);
+  $("#tStop").classList.toggle("hidden", !active);
+  $("#tReload").classList.toggle("hidden", !(active && t.reloadable));
+  clearTimeout(logTimer);
+  if (!active) { $("#tInfo").innerHTML = ""; previewOrigin = ""; updateDeployBtn(); return; }
+  const ws = t.workspace, rep = t.report;
+  previewOrigin = new URL(t.preview_url).origin;
+  $("#tInfo").innerHTML = `<p><b>Testing:</b> ${esc(ws.source)} &middot; ${rep.files} files, ${esc(humanSize(rep.bytes))} &middot; published folder: <code>${esc(ws.publish_dir || "/")}</code> <span class="muted">(${esc(ws.publish_note)})</span><br>
+    <span class="muted">Framework: ${esc(rep.project.framework)} &middot; rules: ${rep.redirect_rules} redirect, ${rep.header_rules} header &middot; fingerprint ${esc(rep.hash.slice(0, 12))} &middot; preview <code>${esc(t.preview_url)}</code></span></p>`;
+  renderReport();
+  setTimeout(applyViewport, 0);
+  if (first) {
+    logFrom = 0; logItems = []; $("#tLog").innerHTML = "";
+    $("#bExternal").classList.add("hidden");
+    navigate("/");
+  }
+  pollLog();
+  updateDeployBtn();
+}
+
+function humanSize(n) {
+  if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
+  if (n >= 1024) return Math.round(n / 1024) + " KB";
+  return n + " bytes";
+}
+
+const order = { fail: 0, warn: 1, info: 2, pass: 3 };
+function renderReport() {
+  const rep = test.report;
+  const c = rep.counts;
+  $("#tSummary").innerHTML = `<span class="pill fail">${c.fail || 0} fail</span> <span class="pill warn">${c.warn || 0} warn</span> <span class="pill pass">${c.pass || 0} pass</span>` + (c.info ? ` <span class="pill info">${c.info} info</span>` : "");
+  const showPass = $("#rShowPass").checked;
+  const list = rep.checks.slice().sort((a, b) => order[a.status] - order[b.status]).filter(x => showPass || x.status !== "pass");
+  $("#tReport").innerHTML = list.map(ch => `<div class="check-item ${esc(ch.status)}">
+      <h3><span class="pill ${esc(ch.status)}">${esc(ch.status)}</span>${esc(ch.title)}</h3>
+      <div>${esc(ch.summary)}</div>
+      ${ch.status !== "pass" && ch.explain ? `<div class="small muted">${esc(ch.explain)}</div>` : ""}
+      ${ch.items && ch.items.length ? `<ul>${ch.items.map(it => `<li>${it.file ? `<code>${esc(it.file)}${it.line ? ":" + it.line : ""}</code> ` : ""}${esc(it.detail)}${it.file && /\.html?$/i.test(it.file) ? ` <a href="#" data-page="${esc(it.file)}">view</a>` : ""}</li>`).join("")}${ch.more ? `<li class="muted">&hellip;and ${ch.more} more</li>` : ""}</ul>` : ""}
+      ${ch.status !== "pass" && ch.fix ? `<div class="fix"><b>How to fix:</b> ${esc(ch.fix)}</div>` : ""}
+    </div>`).join("") || `<p class="ok">Everything passed.</p>`;
+}
+$("#rShowPass").onchange = () => test && test.active && renderReport();
+$("#tReport").onclick = (e) => {
+  const f = e.target.dataset.page;
+  if (!f) return;
+  e.preventDefault();
+  let p = "/" + f;
+  if (p.endsWith("/index.html")) p = p.slice(0, -10);
+  navigate(p);
+  $("#frameWrap").scrollIntoView({ behavior: "smooth" });
+};
+
+function uploadForm(zipEl, dirEl, pathEl) {
+  const fd = new FormData();
+  const zip = zipEl.files[0], dir = dirEl.files, lp = pathEl.value.trim();
+  if (zip) fd.append("zip", zip);
+  else if (dir.length) { for (const f of dir) { fd.append("files", f); fd.append("paths", f.webkitRelativePath || f.name); } }
+  else if (lp) fd.append("local_path", lp);
+  else throw new Error("Choose a .zip, a folder, or enter a path");
+  return fd;
+}
+
+$("#tLoad").onclick = (e) => withBtn(e.target, async () => {
+  const fd = uploadForm($("#tZip"), $("#tDir"), $("#tPath"));
+  $("#tLoading").classList.remove("hidden");
+  try {
+    const t = await api("POST", "/api/test/load", fd);
+    $("#tZip").value = ""; $("#tDir").value = "";
+    test = null;
+    renderTest(t);
+    toast("Site loaded: " + (t.report.counts.fail ? t.report.counts.fail + " check(s) failed" : "no failed checks"));
+  } finally { $("#tLoading").classList.add("hidden"); }
+});
+$("#tReload").onclick = (e) => withBtn(e.target, async () => {
+  const path = currentPath();
+  const t = await api("POST", "/api/test/reload");
+  test = null;
+  renderTest(t);
+  navigate(path);
+  toast("Reloaded and re-tested");
+});
+$("#tStop").onclick = (e) => withBtn(e.target, async () => {
+  await api("POST", "/api/test/stop");
+  $("#pFrame").src = "about:blank";
+  renderTest({ active: false });
+});
+
+// --- built-in browser ---
+function currentPath() { return lastNav || "/"; }
+
+function navigate(path) {
+  if (!previewOrigin) return;
+  let p = String(path || "/").trim();
+  try {
+    const u = new URL(p, previewOrigin + "/");
+    if (u.origin !== previewOrigin) {
+      if (/^https?:$/.test(u.protocol)) { showExternal(u.href); return; }
+      p = "/";
+    } else p = u.pathname + u.search + u.hash;
+  } catch (err) { p = "/"; }
+  lastNav = p;
+  $("#bAddr").value = p;
+  $("#pFrame").src = previewOrigin + p;
+}
+
+function showExternal(href) {
+  const box = $("#bExternal");
+  box.classList.remove("hidden");
+  box.innerHTML = `This page wants to open an outside address: <code>${esc(href)}</code> <a href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open it in a new tab</a> <button class="subtle" id="bExtClose">dismiss</button>`;
+  $("#bExtClose").onclick = () => box.classList.add("hidden");
+}
+
+window.addEventListener("message", (e) => {
+  const fr = $("#pFrame");
+  if (!previewOrigin || e.origin !== previewOrigin || e.source !== fr.contentWindow) return;
+  const d = e.data || {};
+  if (d.type === "hp-nav" && typeof d.href === "string") {
+    try {
+      const u = new URL(d.href);
+      if (u.origin === previewOrigin) { lastNav = u.pathname + u.search + u.hash; if (document.activeElement !== $("#bAddr")) $("#bAddr").value = lastNav; }
+    } catch (err) {}
+  } else if (d.type === "hp-external" && typeof d.href === "string" && /^https?:\/\//i.test(d.href)) {
+    showExternal(d.href);
+  }
+});
+
+function frameCmd(cmd) {
+  const w = $("#pFrame").contentWindow;
+  if (w && previewOrigin) w.postMessage({ hpCmd: cmd }, previewOrigin);
+}
+$("#bBack").onclick = () => frameCmd("back");
+$("#bFwd").onclick = () => frameCmd("forward");
+$("#bReload").onclick = () => { navigate(currentPath()); };
+$("#bHome").onclick = () => navigate("/");
+$("#bGo").onclick = () => navigate($("#bAddr").value);
+$("#bAddr").onkeydown = (e) => { if (e.key === "Enter") navigate($("#bAddr").value); };
+$("#bOpen").onclick = () => { if (previewOrigin) window.open(previewOrigin + currentPath(), "_blank", "noopener"); };
+
+function applyViewport() {
+  const box = $("#frameBox"), wrap = $("#frameWrap");
+  if (vp.full) {
+    box.classList.add("full");
+    box.style.transform = ""; box.style.width = ""; box.style.height = "75vh";
+    box.style.marginRight = ""; box.style.marginBottom = "";
+    $("#vpLabel").textContent = "full width";
+    return;
+  }
+  box.classList.remove("full");
+  if (!wrap.clientWidth) return;
+  const avail = wrap.clientWidth - 24;
+  const s = $("#vpFit").checked && vp.w > avail ? avail / vp.w : 1;
+  box.style.width = vp.w + "px";
+  box.style.height = vp.h + "px";
+  box.style.transform = s < 1 ? `scale(${s})` : "";
+  box.style.marginRight = s < 1 ? (vp.w * s - vp.w) + "px" : "";
+  box.style.marginBottom = s < 1 ? (vp.h * s - vp.h) + "px" : "";
+  $("#vpLabel").textContent = `${vp.w} × ${vp.h}` + (s < 1 ? ` (shown at ${Math.round(s * 100)}%)` : "");
+  $("#vpW").value = vp.w; $("#vpH").value = vp.h;
+}
+document.querySelectorAll("[data-vp]").forEach(b => b.onclick = () => {
+  document.querySelectorAll("[data-vp]").forEach(x => x.classList.toggle("primary", x === b));
+  if (b.dataset.vp === "full") vp.full = true;
+  else { const [w, h] = b.dataset.vp.split("x").map(Number); vp = { w, h, full: false }; }
+  applyViewport();
+});
+$("#vpSet").onclick = () => {
+  const w = Math.min(3840, Math.max(200, +$("#vpW").value || 1280)), h = Math.min(3000, Math.max(200, +$("#vpH").value || 800));
+  vp = { w, h, full: false };
+  document.querySelectorAll("[data-vp]").forEach(x => x.classList.remove("primary"));
+  applyViewport();
+};
+$("#vpRotate").onclick = () => { if (!vp.full) { vp = { w: vp.h, h: vp.w, full: false }; applyViewport(); } };
+$("#vpFit").onchange = applyViewport;
+window.addEventListener("resize", () => { if (location.hash === "#testing") applyViewport(); });
+
+// --- browser log ---
+async function pollLog() {
+  clearTimeout(logTimer);
+  if (!test || !test.active) return;
+  const id = test.id;
+  try {
+    const r = await api("GET", "/api/test/events?from=" + logFrom);
+    if (!r.active || !test || r.id !== id) return;
+    if (r.events.length) {
+      logItems = logItems.concat(r.events).slice(-1000);
+      logFrom = r.last;
+      renderLog();
+    }
+    $("#logCounts").textContent = `${r.errors} error(s), ${r.warnings} warning(s)`;
+  } catch (e) {}
+  if (location.hash === "#testing") logTimer = setTimeout(pollLog, 1000);
+}
+
+function logFilter() { return document.querySelector("input[name=logf]:checked").value; }
+document.querySelectorAll("input[name=logf]").forEach(r => r.onchange = renderLog);
+
+function renderLog() {
+  const all = logFilter() === "all";
+  const box = $("#tLog");
+  const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+  const rows = logItems.filter(e => all || e.kind !== "request" || e.level !== "info").slice(-500);
+  box.innerHTML = rows.map(e => {
+    const time = new Date(e.time).toLocaleTimeString();
+    let text;
+    if (e.kind === "request") text = `${e.method} ${e.url} → ${e.status}${e.msg ? " " + e.msg : ""}`;
+    else text = `[${e.kind}] ${e.msg}` + (e.url && e.kind !== "nav" ? `  @ ${e.url.replace(previewOrigin, "")}` : "");
+    return `<div class="${esc(e.level)}">${esc(time)} ${esc(text)}${e.via ? `<span class="via">  (${esc(e.via)})</span>` : ""}${e.stack ? `<br><span class="via">${esc(e.stack)}</span>` : ""}</div>`;
+  }).join("") || `<div class="info">No problems logged yet. Click around the site; errors appear here.</div>`;
+  if (atBottom) box.scrollTop = box.scrollHeight;
+}
+$("#logClear").onclick = async () => { await api("POST", "/api/test/events/clear").catch(() => {}); logItems = []; renderLog(); };
+
+$("#rNginx").onclick = (e) => withBtn(e.target, async () => {
+  const pre = $("#tNginx");
+  if (!pre.classList.contains("hidden")) { pre.classList.add("hidden"); return; }
+  const r = await fetch("/api/test/nginx");
+  pre.textContent = await r.text();
+  pre.classList.remove("hidden");
+});
+
+// --- deploy the tested build ---
+$("#tDeploy").onclick = (e) => withBtn(e.target, async () => {
+  const slug = $("#tSite").value;
+  const s = sites.find(x => x.slug === slug);
+  if (!test || !test.active || !s) return;
+  const fails = test.report.checks.filter(c => c.status === "fail");
+  let accept = false;
+  if (fails.length) {
+    if (!confirm(`${fails.length} check(s) FAILED:\n\n- ${fails.map(f => f.title + ": " + f.summary).join("\n- ")}\n\nVisitors may see broken pages. Deploy to "${s.name}" anyway?`)) return;
+    accept = true;
+  } else if (!confirm(`Deploy the tested version (${test.report.files} files, fingerprint ${test.report.hash.slice(0, 12)}) to "${s.name}"${s.domain ? " (" + s.domain + ")" : ""}?`)) return;
+  const r = await api("POST", "/api/test/deploy", { slug, test_id: test.id, accept_fails: accept });
+  followJob(r.job, $("#tDeployLog"), (j) => { if (!j.error) toast("Deployed to " + s.name); loadSites(); });
+});
+
+window.addEventListener("load", applyViewport);
 
 // ---------------- init ----------------
 loadState().then(() => {

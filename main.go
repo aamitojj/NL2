@@ -44,6 +44,7 @@ func main() {
 		log.Printf("warning: could not read config: %v", err)
 	}
 	cleanupOldBinary()
+	cleanupStaleWorkspaces()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(*port))
 	if err != nil {
@@ -74,6 +75,7 @@ func shutdown() {
 	sshS.close()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+	stopTest()
 	_ = httpServer.Shutdown(ctx)
 	os.Exit(0)
 }
@@ -126,7 +128,22 @@ func guard(next http.Handler) http.Handler {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
+		// The UI must never be framed (clickjacking) and only loads its own code.
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src http://localhost:* http://127.0.0.1:* http://[::1]:*; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		if strings.HasPrefix(r.URL.Path, "/api/") {
+			// Requests must come from HostPanel's own page, never from another
+			// site or from a page shown in the App Testing preview.
+			if s := r.Header.Get("Sec-Fetch-Site"); s != "" && s != "same-origin" && s != "none" {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "cross-site request blocked"})
+				return
+			}
+			if o := r.Header.Get("Origin"); o != "" && o != "http://"+r.Host {
+				writeJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin request blocked"})
+				return
+			}
 			ck, err := r.Cookie("hp_session")
 			if err != nil || subtle.ConstantTimeCompare([]byte(ck.Value), []byte(sessionToken)) != 1 {
 				writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "session expired: close this tab and use the address printed in the HostPanel window"})
@@ -159,6 +176,7 @@ func routes() http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", fileServer))
 
 	mux.HandleFunc("GET /api/state", apiState)
+	registerTestRoutes(mux)
 	mux.HandleFunc("POST /api/server", apiSaveServer)
 	mux.HandleFunc("POST /api/ssh/connect", apiSSHConnect)
 	mux.HandleFunc("POST /api/ssh/disconnect", func(w http.ResponseWriter, r *http.Request) {
@@ -537,26 +555,20 @@ func apiCreateSite(w http.ResponseWriter, r *http.Request) {
 
 // apiDeploy accepts multipart: a single .zip ("zip"), or a folder upload
 // ("files" + parallel "paths"), or a local path on this PC ("local_path").
-func apiDeploy(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-	if _, err := siteOr404(slug); err != nil {
-		writeErr(w, err)
-		return
-	}
-	if !sshS.connected() {
-		writeErr(w, errNotConnected)
-		return
-	}
+// siteUpload reads a site from a multipart request: local_path (folder or
+// .zip on this PC), a "zip" file, or a folder upload ("files" + "paths").
+// It unpacks it into a Workspace; the caller owns (and must Close) it.
+func siteUpload(w http.ResponseWriter, r *http.Request) (*Workspace, error) {
 	r.Body = http.MaxBytesReader(w, r.Body, 3<<30)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeErr(w, fmt.Errorf("upload failed: %w", err))
-		return
+		return nil, fmt.Errorf("upload failed: %w", err)
 	}
 	defer r.MultipartForm.RemoveAll()
 
 	var entries []srcEntry
 	var cleanup func()
 	var err error
+	source, localPath := "", ""
 	if lp := strings.Trim(strings.TrimSpace(r.FormValue("local_path")), `"`); lp != "" {
 		st, e := os.Stat(lp)
 		switch {
@@ -569,31 +581,36 @@ func apiDeploy(w http.ResponseWriter, r *http.Request) {
 		default:
 			err = errors.New("local path must be a folder or a .zip file")
 		}
+		source, localPath = lp, lp
 	} else if fhs := r.MultipartForm.File["zip"]; len(fhs) == 1 {
 		tmp, e := saveUpload(fhs[0])
 		if e != nil {
-			writeErr(w, e)
-			return
+			return nil, e
 		}
 		defer os.Remove(tmp)
 		entries, cleanup, err = zipEntries(tmp)
+		source = "uploaded zip " + filepath.Base(fhs[0].Filename)
 	} else if fhs := r.MultipartForm.File["files"]; len(fhs) > 0 {
 		paths := r.MultipartForm.Value["paths"]
 		if len(paths) != len(fhs) {
-			writeErr(w, errors.New("folder upload is missing file paths"))
-			return
+			return nil, errors.New("folder upload is missing file paths")
 		}
 		for i, fh := range fhs {
 			rel, e := cleanRel(paths[i])
 			if e != nil {
-				writeErr(w, e)
-				return
+				return nil, e
 			}
 			if rel == "" {
 				continue
 			}
 			fh := fh
 			entries = append(entries, srcEntry{Path: rel, Size: fh.Size, Open: func() (io.ReadCloser, error) { return fh.Open() }})
+		}
+		source = "uploaded folder"
+		if len(paths) > 0 {
+			if top, _, ok := strings.Cut(strings.TrimPrefix(paths[0], "/"), "/"); ok {
+				source = "uploaded folder " + top
+			}
 		}
 	} else {
 		err = errors.New("choose a .zip file or a folder to upload")
@@ -602,17 +619,36 @@ func apiDeploy(w http.ResponseWriter, r *http.Request) {
 		defer cleanup()
 	}
 	if err != nil {
+		return nil, err
+	}
+	ws, err := newWorkspace(entries, source)
+	if err != nil {
+		return nil, err
+	}
+	ws.LocalPath = localPath
+	return ws, nil
+}
+
+func apiDeploy(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if _, err := siteOr404(slug); err != nil {
 		writeErr(w, err)
 		return
 	}
-	tarball, n, size, err := buildSiteTarball(entries)
+	if !sshS.connected() {
+		writeErr(w, errNotConnected)
+		return
+	}
+	ws, err := siteUpload(w, r)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	j := newJob("deploy", func(j *Job) error {
-		defer os.Remove(tarball)
-		return deploySiteJob(j, slug, tarball, n, size)
+		defer ws.Close()
+		rep := runChecks(ws)
+		j.Logf("Checks: %d passed, %d warnings, %d failed (open App Testing for details and a live preview).", rep.Counts["pass"], rep.Counts["warn"], rep.Counts["fail"])
+		return deployWorkspace(j, slug, ws)
 	})
 	writeJSON(w, 200, map[string]any{"job": j.ID})
 }

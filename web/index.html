@@ -12,6 +12,7 @@
   <nav>
     <a href="#setup" data-tab="setup">1. Setup</a>
     <a href="#sites" data-tab="sites">2. Sites</a>
+    <a href="#testing" data-tab="testing">App Testing</a>
     <a href="#guide" data-tab="guide">Guide</a>
     <a href="#settings" data-tab="settings">Settings &amp; Updates</a>
   </nav>
@@ -109,6 +110,7 @@
         <label>&hellip;or a folder <input type="file" id="dirFiles" webkitdirectory multiple></label>
         <label>&hellip;or a path on this PC <input id="localPath" placeholder="C:\Sites\bakery\dist"></label>
         <button id="deployBtn" class="primary">Deploy</button>
+        <p class="small muted">Tip: try it on your PC first in <a href="#testing">App Testing</a> (preview, automatic checks, then "Deploy this version").</p>
         <pre id="deployLog" class="log hidden"></pre>
         <h3>Releases</h3>
         <button id="loadReleases">Show releases</button>
@@ -135,6 +137,85 @@
         <label class="check"><input type="checkbox" id="keepFiles"> keep files on server</label>
         <pre id="otherLog" class="log hidden"></pre>
       </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============ APP TESTING ============ -->
+<section id="tab-testing" class="tab hidden">
+  <h1>App Testing</h1>
+  <p class="muted">Test a site on this PC before it goes live. Nothing is uploaded until you click <b>Deploy this version</b>. <a href="#guide-testing">How it works</a></p>
+  <div class="card" id="tLoader">
+    <h2>1. Load a site</h2>
+    <div class="grid">
+      <label>Zip file <input type="file" id="tZip" accept=".zip"></label>
+      <label>&hellip;or a folder <input type="file" id="tDir" webkitdirectory multiple></label>
+      <label>&hellip;or a path on this PC <input id="tPath" placeholder="C:\Sites\bakery\dist"></label>
+    </div>
+    <button id="tLoad" class="primary">Load &amp; test</button>
+    <button id="tReload" class="hidden" title="Read the folder/zip on this PC again and re-run the checks">Reload from disk &amp; re-test</button>
+    <button id="tStop" class="hidden">Stop test</button>
+    <span id="tLoading" class="muted small hidden">Unpacking and checking&hellip;</span>
+    <div id="tInfo" class="small"></div>
+  </div>
+
+  <div id="tMain" class="hidden">
+    <div class="card">
+      <h2>2. Try it in the built-in browser</h2>
+      <div class="browserbar">
+        <button id="bBack" title="Back">&#9664;</button>
+        <button id="bFwd" title="Forward">&#9654;</button>
+        <button id="bReload" title="Reload">&#10227;</button>
+        <button id="bHome" title="Home page">&#8962;</button>
+        <input id="bAddr" spellcheck="false" title="Address inside the preview (press Enter)">
+        <button id="bGo">Go</button>
+        <button id="bOpen" title="Open in your normal browser">Open in browser &#8599;</button>
+      </div>
+      <div class="browserbar small">
+        <span class="muted">Screen:</span>
+        <button data-vp="375x667">Phone 375</button>
+        <button data-vp="768x1024">Tablet 768</button>
+        <button data-vp="1280x800" class="primary">Desktop 1280</button>
+        <button data-vp="full">Full width</button>
+        <input id="vpW" type="number" min="200" max="3840" class="num" title="width"> &times; <input id="vpH" type="number" min="200" max="3000" class="num" title="height">
+        <button id="vpSet">Set</button>
+        <button id="vpRotate" title="Swap width and height">Rotate</button>
+        <label class="check inline"><input type="checkbox" id="vpFit" checked> Shrink to fit</label>
+        <span id="vpLabel" class="muted"></span>
+      </div>
+      <div id="bExternal" class="note hidden small"></div>
+      <div id="frameWrap"><div id="frameBox"><iframe id="pFrame" title="Site preview" sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></div></div>
+      <div class="consolehead">
+        <b>Browser log</b>
+        <label class="check inline"><input type="radio" name="logf" value="problems" checked> Problems only</label>
+        <label class="check inline"><input type="radio" name="logf" value="all"> All requests</label>
+        <span id="logCounts" class="muted small"></span>
+        <button id="logClear" class="subtle">Clear</button>
+      </div>
+      <div id="tLog" class="console"></div>
+    </div>
+
+    <div class="card">
+      <h2>3. Check report <span id="tSummary" class="small"></span></h2>
+      <div class="toolbar">
+        <label class="check inline"><input type="checkbox" id="rShowPass"> Show passed checks</label>
+        <a id="rExport" class="button" href="/api/test/report" download>Export report (JSON)</a>
+        <button id="rNginx">Show production server config</button>
+      </div>
+      <div id="tReport"></div>
+      <pre id="tNginx" class="log hidden"></pre>
+    </div>
+
+    <div class="card">
+      <h2>4. Deploy this version</h2>
+      <p class="small muted">Uploads exactly the files you tested (same fingerprint), with the same redirect and header rules, through the normal deployment (a new release you can roll back).</p>
+      <div class="toolbar">
+        <select id="tSite"></select>
+        <button id="tDeploy" class="primary" disabled>Deploy this version</button>
+        <span id="tDeployNote" class="small muted"></span>
+      </div>
+      <pre id="tDeployLog" class="log hidden"></pre>
     </div>
   </div>
 </section>
@@ -178,6 +259,33 @@
       <li>Every deploy is kept as a release; you can switch back to one of the last 5.</li>
     </ol>
   </div>
+  <div class="card" id="guide-testing">
+    <h2>5. Test before you deploy (App Testing)</h2>
+    <ol>
+      <li>Open <a href="#testing">App Testing</a> and load the same zip, folder or path you would deploy. HostPanel unpacks it into a temporary folder on your PC and starts a private preview server (only this PC can open it).</li>
+      <li>Click through the site in the built-in browser. Use the <b>Phone / Tablet / Desktop</b> buttons to see how it looks on other screens. JavaScript errors and files that fail to load appear in the <b>Browser log</b> under the preview.</li>
+      <li>Read the <b>Check report</b>: <span class="pill fail">fail</span> means visitors will see something broken, <span class="pill warn">warn</span> is worth fixing, <span class="pill pass">pass</span> is fine. Each item says what is wrong and how to fix it.</li>
+      <li>Fix problems in your files, then load again (or click <b>Reload from disk &amp; re-test</b> when you used a path on this PC).</li>
+      <li>Choose the site and click <b>Deploy this version</b>. It uploads exactly the tested files.</li>
+    </ol>
+    <p><b>Redirects and headers.</b> HostPanel understands Netlify's <code>_redirects</code>, <code>_headers</code> and <code>netlify.toml</code> files. The preview applies them, and every deployment turns them into the live web-server config, so the preview and the live site behave the same. Examples for <code>_redirects</code>:</p>
+<pre>
+# Single-page app (React, Vue, ...): every unknown address shows index.html
+/*            /index.html     200
+# Moved page
+/old-page     /new-page       301
+# Keep part of the address
+/blog/:year/* /posts/:year/:splat  301
+</pre>
+    <p>Example <code>_headers</code>:</p>
+<pre>
+/*
+  X-Content-Type-Options: nosniff
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+</pre>
+    <p class="small muted">Good to know: an existing file always wins over a rule unless you add <code>!</code> (e.g. <code>301!</code>). Addresses are case-sensitive online even though Windows ignores case. <code>/about</code> serves <code>about.html</code> automatically. HostPanel never runs <code>npm</code> or build commands: build on your PC first and test the output folder (<code>dist</code>, <code>build</code>&hellip;). Netlify Functions and Netlify Forms are not available.</p>
+  </div>
   <div class="card">
     <h2>Troubleshooting</h2>
     <dl>
@@ -188,6 +296,8 @@
       <dt>Cannot reach Coolify</dt><dd>Port 8000 is blocked: open it in the firewall, or tick "Send API calls through the SSH connection".</dd>
       <dt>Domain shows a certificate warning</dt><dd>Wait 1&ndash;2 minutes after connecting. Check that both A records point to the server and there's no AAAA record pointing elsewhere. In Coolify, check that the proxy (Servers &rarr; localhost &rarr; Proxy) is running.</dd>
       <dt>404 / old content after deploy</dt><dd>Make sure <code>index.html</code> is in the top folder of your zip. Hard-refresh the browser (Ctrl+F5).</dd>
+      <dt>Redirect rules don't work on a site created with HostPanel 0.1</dt><dd>The first deployment with 0.2 adds the rules folder to the container and restarts it once (about a minute). If the log shows a warning, use <i>Redeploy container</i>.</dd>
+      <dt>"nginx rejected the generated config"</dt><dd>One of your rules could not be converted. The live site was not changed. App Testing &rarr; Check report &rarr; <i>Redirect and header rules</i> shows which line to fix.</dd>
       <dt>Site status "exited" or "degraded"</dt><dd>Click <i>Redeploy container</i>, then look at the deployment log in Coolify.</dd>
     </dl>
   </div>
