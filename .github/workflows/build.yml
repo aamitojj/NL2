@@ -14,9 +14,9 @@ jobs:
       - name: Decode binary assets
         shell: bash
         run: |
-          base64 -d assets/web_icon.png.b64 > web/icon.png
-          base64 -d assets/winres_icon.ico.b64 > winres/icon.ico
-          base64 -d assets/winres_icon.png.b64 > winres/icon.png
+          tr -d "\r" < assets/web_icon.png.b64 | base64 -d > web/icon.png
+          tr -d "\r" < assets/winres_icon.ico.b64 | base64 -d > winres/icon.ico
+          tr -d "\r" < assets/winres_icon.png.b64 | base64 -d > winres/icon.png
       - run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go vet ./... && GOOS=windows go vet ./...
       - run: go test -race ./...
@@ -30,9 +30,9 @@ jobs:
       - name: Decode binary assets
         shell: bash
         run: |
-          base64 -d assets/web_icon.png.b64 > web/icon.png
-          base64 -d assets/winres_icon.ico.b64 > winres/icon.ico
-          base64 -d assets/winres_icon.png.b64 > winres/icon.png
+          tr -d "\r" < assets/web_icon.png.b64 | base64 -d > web/icon.png
+          tr -d "\r" < assets/winres_icon.ico.b64 | base64 -d > winres/icon.ico
+          tr -d "\r" < assets/winres_icon.png.b64 | base64 -d > winres/icon.png
       - name: Version
         shell: bash
         run: |
