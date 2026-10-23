@@ -1,3 +1,7 @@
-hostpanel.exe
-*.exe.old
-/dist/
+*.exe
+*.syso
+dist/
+screenshots/
+/web/icon.png
+/winres/icon.ico
+/winres/icon.png
