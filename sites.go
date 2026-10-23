@@ -47,7 +47,7 @@ func slugify(name string) string {
 
 const placeholderHTML = `<!doctype html><html><head><meta charset="utf-8"><title>Coming soon</title>
 <style>body{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#f4f6fb;color:#334}</style>
-</head><body><div><h1>This site is ready.</h1><p>Upload your files with HostPanel to replace this page.</p></div></body></html>`
+</head><body><div><h1>This site is ready.</h1><p>Upload your files with Dilreet to replace this page.</p></div></body></html>`
 
 func createSiteJob(j *Job, name, slug string) error {
 	ctx := context.Background()
@@ -76,6 +76,7 @@ func createSiteJob(j *Job, name, slug string) error {
 		j.Logf("Using Coolify server %q (%s)", srv[0].Name, serverUUID)
 	}
 
+	j.SetProgress(5, "Preparing your site on the server")
 	j.Logf("1/5 Preparing folder %s on the server...", siteDir(slug))
 	script := fmt.Sprintf(`set -e
 BASE=%[1]s
@@ -96,8 +97,9 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML, defaultNginxConf(), "HPCON
 		return fmt.Errorf("prepare folder: %v: %s", err, out)
 	}
 
+	j.SetProgress(25, "Creating the project")
 	j.Logf("2/5 Creating Coolify project %q...", name)
-	projUUID, err := api.CreateProject(name, "HostPanel site: "+slug)
+	projUUID, err := api.CreateProject(name, "Dilreet site: "+slug)
 	if err != nil {
 		return err
 	}
@@ -105,15 +107,22 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML, defaultNginxConf(), "HPCON
 	save := func() {
 		_ = withConfig(func(c *Config) error {
 			if s := findSite(c, slug); s != nil {
+				f := s.Folder
 				*s = *site
+				if s.Folder == "" {
+					s.Folder = f
+				}
 			} else {
 				c.Sites = append(c.Sites, site)
 			}
+			assignFolders(c)
+			site.Folder = findSite(c, slug).Folder
 			return nil
 		})
 	}
 	save()
 
+	j.SetProgress(45, "Creating the web server")
 	j.Logf("3/5 Creating nginx application (Docker image nginx:stable-alpine)...")
 	appUUID, err := api.CreateNginxApp(projUUID, serverUUID, slug)
 	if err != nil {
@@ -122,6 +131,7 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML, defaultNginxConf(), "HPCON
 	site.AppUUID = appUUID
 	save()
 
+	j.SetProgress(65, "Connecting the site folder")
 	j.Logf("4/5 Mounting %s into the container at /usr/share/nginx ...", siteDir(slug))
 	if err := api.AddDirectoryMount(appUUID, siteDir(slug), "/usr/share/nginx"); err != nil {
 		var ae *APIError
@@ -142,11 +152,28 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML, defaultNginxConf(), "HPCON
 		save()
 	}
 
+	// Free instant address: <slug>.<server-ip>.sslip.io resolves to the
+	// server without any DNS setup, and Coolify/Traefik requests a Let's
+	// Encrypt certificate for it (sslip.io has a raised LE rate limit).
+	if ip := snapshotConfig().ServerIP; ip != "" {
+		host := sslipHost(slug, ip)
+		if err := retry(context.Background(), 3, 2*time.Second, func() error { return api.SetDomains(appUUID, "https://"+host, true) }); err != nil {
+			j.Logf("   Note: could not set the instant address %s (%v); Coolify's generated address is used instead.", host, err)
+		} else {
+			site.InstantURL = "https://" + host
+			save()
+			j.Logf("   Instant address: %s (no DNS needed)", site.InstantURL)
+		}
+	}
+
+	j.SetProgress(85, "Starting the site")
 	j.Logf("5/5 Starting the site...")
 	if err := api.Deploy(appUUID); err != nil {
 		return err
 	}
-	if app, err := api.Application(appUUID); err == nil && app.FQDN != "" {
+	if site.InstantURL != "" {
+		j.Logf("Live at %s in about a minute (the HTTPS certificate can take a little longer).", site.InstantURL)
+	} else if app, err := api.Application(appUUID); err == nil && app.FQDN != "" {
 		j.Logf("Temporary address: %s (works after the first deployment finishes, ~30-60 s)", app.FQDN)
 	}
 	j.Logf("Site %q created. Next: upload your files, then connect a domain.", name)
@@ -178,7 +205,22 @@ func deployWorkspace(j *Job, slug string, ws *Workspace) error {
 		nr, nh = len(ws.Rules.Redirects), len(ws.Rules.Headers)
 	}
 	j.Logf("Rules: %d redirect/rewrite and %d header rules -> production nginx config. Build fingerprint %s", nr, nh, ws.Hash[:12])
-	return deploySiteJob(j, slug, tarball, n, size, generateNginxConf(ws.Rules, ws.Files))
+	if ws.restoreOf != "" {
+		err := deploySiteJob(j, slug, tarball, n, size, generateNginxConf(ws.Rules, ws.Files))
+		if err == nil {
+			c := snapshotConfig()
+			if s := findSite(&c, slug); s != nil {
+				markRestored(slug, ws.restoreOf, s.Release)
+			}
+		}
+		return err
+	}
+	rec := archiveDeploy(j, slug, ws)
+	err = deploySiteJob(j, slug, tarball, n, size, generateNginxConf(ws.Rules, ws.Files))
+	if rec != nil {
+		finishDeploy(slug, rec.ID, err)
+	}
+	return err
 }
 
 func defaultNginxConf() string { return generateNginxConf(nil, &siteFiles{}) }
@@ -237,17 +279,22 @@ func deploySiteJob(j *Job, slug, tarball string, files int, size int64, conf str
 		return err
 	}
 	release := time.Now().UTC().Format("20060102-150405")
-	remoteTmp := fmt.Sprintf("/tmp/hostpanel-%s-%s.tar.gz", slug, randHex(4))
+	remoteTmp := fmt.Sprintf("/tmp/dilreet-%s-%s.tar.gz", slug, randHex(4))
 	if user == "root" {
-		remoteTmp = fmt.Sprintf("/root/.hostpanel-%s-%s.tar.gz", slug, randHex(4))
+		remoteTmp = fmt.Sprintf("/root/.dilreet-%s-%s.tar.gz", slug, randHex(4))
 	}
 	j.Logf("Uploading %d files (%.1f MB) over SFTP...", files, float64(size)/1e6)
+	j.SetProgress(10, "Uploading files")
 	if err := uploadFile(tarball, remoteTmp, func(done, total int64) {
 		j.Logf("  uploaded %.1f / %.1f MB (compressed)", float64(done)/1e6, float64(total)/1e6)
+		if total > 0 {
+			j.SetProgress(10+int(done*70/total), "Uploading files")
+		}
 	}); err != nil {
 		return err
 	}
 	j.Logf("Extracting into release %s and switching the site over...", release)
+	j.SetProgress(85, "Publishing")
 	delim := "HPCONF_" + randHex(8)
 	script := fmt.Sprintf(`set -e
 BASE=%[1]s
@@ -286,7 +333,7 @@ echo "live release: $(readlink "$BASE/html")"`, shellQuote(siteDir(slug)), shell
 		return nil
 	})
 	if !site.ConfMount && site.AppUUID != "" {
-		j.Logf("This site was created with HostPanel 0.1: adding the rules mount (%s/nginx -> /etc/nginx/conf.d) so _redirects/_headers work...", siteDir(slug))
+		j.Logf("This site was created with Dilreet 0.1: adding the rules mount (%s/nginx -> /etc/nginx/conf.d) so _redirects/_headers work...", siteDir(slug))
 		api, err := newCoolify()
 		if err == nil {
 			err = api.AddDirectoryMount(site.AppUUID, siteDir(slug)+"/nginx", "/etc/nginx/conf.d")
@@ -429,6 +476,6 @@ func deleteSiteJob(j *Job, slug string, keepFiles bool) error {
 		c.Sites = out
 		return nil
 	})
-	j.Logf("Site %q removed from HostPanel.", slug)
+	j.Logf("Site %q removed from Dilreet.", slug)
 	return nil
 }
