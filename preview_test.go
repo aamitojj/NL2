@@ -103,7 +103,7 @@ func TestPreviewServer(t *testing.T) {
 	if p := get(t, c, base+"/", "evil.example:80"); p.status != 403 && p.status != 421 && p.status != 400 {
 		t.Errorf("foreign Host header accepted: %d", p.status)
 	}
-	// The HostPanel API is not reachable through the preview.
+	// The Dilreet API is not reachable through the preview.
 	for _, u := range []string{"/api/state", "/api/sites", "/api/test"} {
 		if p := get(t, c, base+u, host); p.status != 404 || strings.Contains(p.body, "\"sites\"") {
 			t.Errorf("%s reachable via preview: %d", u, p.status)
@@ -111,7 +111,7 @@ func TestPreviewServer(t *testing.T) {
 	}
 	req, _ := http.NewRequest("POST", base+"/api/sites", strings.NewReader("{}"))
 	req.Host = host
-	req.Header.Set("X-HostPanel", "1")
+	req.Header.Set("X-Dilreet", "1")
 	if resp, err := c.Do(req); err == nil {
 		resp.Body.Close()
 		if resp.StatusCode != 405 {
@@ -120,7 +120,7 @@ func TestPreviewServer(t *testing.T) {
 	}
 
 	home := get(t, c, base+"/", host)
-	if home.status != 200 || !strings.Contains(home.body, "/__hostpanel/inject.js") {
+	if home.status != 200 || !strings.Contains(home.body, "/__dilreet/inject.js") {
 		t.Errorf("home not injected: %d %q", home.status, home.body)
 	}
 	if home.xtest != "all" {
@@ -142,7 +142,7 @@ func TestPreviewServer(t *testing.T) {
 	if p := get(t, c, base+"/_headers", host); p.status != 404 {
 		t.Errorf("rule file served: %+v", p)
 	}
-	if p := get(t, c, base+"/__hostpanel/inject.js", host); p.status != 200 || !strings.Contains(p.body, "http://127.0.0.1:4321") {
+	if p := get(t, c, base+"/__dilreet/inject.js", host); p.status != 200 || !strings.Contains(p.body, "http://127.0.0.1:4321") {
 		t.Errorf("inject.js must know the UI origin: %d", p.status)
 	}
 	time.Sleep(50 * time.Millisecond)

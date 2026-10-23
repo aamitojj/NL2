@@ -21,9 +21,9 @@ import (
 
 // Version is the app version. It is a constant in spirit; it is a var only so
 // release builds can set it with -ldflags "-X main.Version=x.y.z".
-var Version = "0.2.0"
+var Version = "0.3.0"
 
-const defaultManifestURL = "https://example.com/hostpanel/latest.json"
+const defaultManifestURL = "https://example.com/dilreet/latest.json"
 
 type Manifest struct {
 	Version string `json:"version"`
@@ -137,7 +137,7 @@ func selfUpdateJob(j *Job) error {
 	}
 	f, err := os.OpenFile(newPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
 	if err != nil {
-		return fmt.Errorf("cannot write next to the program (%s). Move HostPanel to a folder you can write to, e.g. your Desktop or Documents: %w", newPath, err)
+		return fmt.Errorf("cannot write next to the program (%s). Move Dilreet to a folder you can write to, e.g. your Desktop or Documents: %w", newPath, err)
 	}
 	h := sha256.New()
 	n, err := io.Copy(io.MultiWriter(f, h), io.LimitReader(resp.Body, 500<<20))
@@ -162,14 +162,23 @@ func selfUpdateJob(j *Job) error {
 		_ = os.Rename(oldPath, exe) // roll back
 		return fmt.Errorf("install new program: %w", err)
 	}
-	j.Logf("Installed %s. Restarting HostPanel (a new browser tab will open)...", m.Version)
+	if appMode == modeNative {
+		j.Logf("Installed %s. Dilreet restarts in a moment (the window reopens by itself)...", m.Version)
+	} else {
+		j.Logf("Installed %s. Restarting Dilreet (a new browser tab will open)...", m.Version)
+	}
 	go func() {
 		time.Sleep(1500 * time.Millisecond)
-		args := append([]string{}, os.Args[1:]...)
+		args := []string{"-after-update"}
+		for _, a := range os.Args[1:] {
+			if a != "-after-update" && a != "--after-update" {
+				args = append(args, a)
+			}
+		}
 		cmd := exec.Command(exe, args...)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		if err := cmd.Start(); err != nil {
-			fmt.Println("restart failed:", err, "- please start HostPanel again manually")
+			fmt.Println("restart failed:", err, "- please start Dilreet again manually")
 		}
 		shutdown()
 	}()
@@ -233,6 +242,10 @@ func installCoolifyJob(j *Job, upgrade bool) error {
 		j.Logf("Installing Coolify with the official installer. This usually takes 2-10 minutes.")
 	}
 	j.Logf("$ %s", coolifyInstallCmd)
+	j.SetProgress(2, "Starting the installer")
+	j.mu.Lock()
+	j.onLine = installLineHook
+	j.mu.Unlock()
 	if err := runRemote(ctx, coolifyInstallCmd, j); err != nil {
 		return err
 	}
