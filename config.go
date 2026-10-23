@@ -21,6 +21,7 @@ type Site struct {
 	CreatedAt   string `json:"created_at"`
 	LastDeploy  string `json:"last_deploy,omitempty"`
 	Release     string `json:"release,omitempty"`
+	ConfMount   bool   `json:"conf_mount,omitempty"` // nginx rules mount added (v0.2+)
 }
 
 type Config struct {

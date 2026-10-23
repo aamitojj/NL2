@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -78,7 +79,11 @@ func createSiteJob(j *Job, name, slug string) error {
 	j.Logf("1/5 Preparing folder %s on the server...", siteDir(slug))
 	script := fmt.Sprintf(`set -e
 BASE=%[1]s
-mkdir -p "$BASE/releases/initial"
+mkdir -p "$BASE/releases/initial" "$BASE/nginx" "$BASE/nginx-releases"
+cat > "$BASE/nginx-releases/_default.conf" <<'%[4]s'
+%[3]s
+%[4]s
+[ -f "$BASE/nginx/default.conf" ] || cp "$BASE/nginx-releases/_default.conf" "$BASE/nginx/default.conf"
 if [ ! -e "$BASE/html" ]; then
   cat > "$BASE/releases/initial/index.html" <<'HPEOF'
 %[2]s
@@ -86,7 +91,7 @@ HPEOF
   ln -sfn releases/initial "$BASE/html"
 fi
 chmod -R a+rX "$BASE"
-echo ok`, shellQuote(siteDir(slug)), placeholderHTML)
+echo ok`, shellQuote(siteDir(slug)), placeholderHTML, defaultNginxConf(), "HPCONF_"+randHex(8))
 	if out, err := runRemoteOutput(ctx, script); err != nil {
 		return fmt.Errorf("prepare folder: %v: %s", err, out)
 	}
@@ -129,6 +134,14 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML)
 		return err
 	}
 
+	j.Logf("   Mounting %s/nginx at /etc/nginx/conf.d (redirect and header rules)...", siteDir(slug))
+	if err := api.AddDirectoryMount(appUUID, siteDir(slug)+"/nginx", "/etc/nginx/conf.d"); err != nil {
+		j.Logf("   WARNING: %v. The site works, but _redirects/_headers rules will only apply after a later deployment adds this mount.", err)
+	} else {
+		site.ConfMount = true
+		save()
+	}
+
 	j.Logf("5/5 Starting the site...")
 	if err := api.Deploy(appUUID); err != nil {
 		return err
@@ -140,7 +153,79 @@ echo ok`, shellQuote(siteDir(slug)), placeholderHTML)
 	return nil
 }
 
-func deploySiteJob(j *Job, slug, tarball string, files int, size int64) error {
+// deployWorkspace publishes exactly the tested files of ws plus the nginx
+// config generated from its rules.
+func deployWorkspace(j *Job, slug string, ws *Workspace) error {
+	if err := ws.verifyUnchanged(); err != nil {
+		return err
+	}
+	entries, err := dirEntries(ws.Publish)
+	if err != nil {
+		return err
+	}
+	tarball, n, size, err := buildSiteTarball(entries)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tarball)
+	label := ws.PublishRel
+	if label == "" {
+		label = "top level"
+	}
+	j.Logf("Publishing folder: %s (%s)", label, ws.PublishNote)
+	nr, nh := 0, 0
+	if ws.Rules != nil {
+		nr, nh = len(ws.Rules.Redirects), len(ws.Rules.Headers)
+	}
+	j.Logf("Rules: %d redirect/rewrite and %d header rules -> production nginx config. Build fingerprint %s", nr, nh, ws.Hash[:12])
+	return deploySiteJob(j, slug, tarball, n, size, generateNginxConf(ws.Rules, ws.Files))
+}
+
+func defaultNginxConf() string { return generateNginxConf(nil, &siteFiles{}) }
+
+// confShellFuncs are shell helpers that install a generated nginx config,
+// test it inside the running container and roll back if nginx rejects it.
+const confShellFuncs = `
+HP_RELOAD=""
+hp_container() {
+  command -v docker >/dev/null 2>&1 || return 0
+  docker ps --filter "name=$APP" --filter status=running --format '{{.Names}}' 2>/dev/null | grep "^$APP" | head -n1
+}
+hp_conf_install() {
+  CD="$BASE/nginx"
+  mkdir -p "$CD"
+  if [ -f "$CD/default.conf" ]; then cp -f "$CD/default.conf" "$CD/.prev.conf.bak"; else rm -f "$CD/.prev.conf.bak"; fi
+  cp -f "$1" "$CD/.new.tmp" && chmod 644 "$CD/.new.tmp" && mv -f "$CD/.new.tmp" "$CD/default.conf"
+  C=$(hp_container)
+  if [ -n "$C" ] && docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$C" 2>/dev/null | grep -qx /etc/nginx/conf.d; then
+    if ! OUT=$(docker exec "$C" nginx -t 2>&1); then
+      echo "nginx rejected the generated config:" >&2; echo "$OUT" >&2
+      if [ -f "$CD/.prev.conf.bak" ]; then mv -f "$CD/.prev.conf.bak" "$CD/default.conf"; fi
+      return 1
+    fi
+    HP_RELOAD="$C"
+    echo "nginx config test passed in container $C"
+  elif command -v docker >/dev/null 2>&1 && docker image inspect nginx:stable-alpine >/dev/null 2>&1; then
+    if ! OUT=$(docker run --rm --network none -v "$CD":/etc/nginx/conf.d:ro nginx:stable-alpine nginx -t 2>&1); then
+      echo "nginx rejected the generated config:" >&2; echo "$OUT" >&2
+      if [ -f "$CD/.prev.conf.bak" ]; then mv -f "$CD/.prev.conf.bak" "$CD/default.conf"; fi
+      return 1
+    fi
+    echo "nginx config test passed (container not running or rules mount not active yet)"
+  else
+    echo "note: could not test the nginx config (no running container / docker)"
+  fi
+  rm -f "$CD/.prev.conf.bak"
+  return 0
+}
+hp_reload() {
+  if [ -n "$HP_RELOAD" ]; then
+    docker exec "$HP_RELOAD" nginx -s reload >/dev/null 2>&1 && echo "nginx reloaded with the new rules" || echo "WARNING: nginx reload failed; restart the site to apply the rules"
+  fi
+}
+`
+
+func deploySiteJob(j *Job, slug, tarball string, files int, size int64, conf string) error {
 	ctx := context.Background()
 	c := snapshotConfig()
 	site := findSite(&c, slug)
@@ -163,20 +248,33 @@ func deploySiteJob(j *Job, slug, tarball string, files int, size int64) error {
 		return err
 	}
 	j.Logf("Extracting into release %s and switching the site over...", release)
+	delim := "HPCONF_" + randHex(8)
 	script := fmt.Sprintf(`set -e
 BASE=%[1]s
 TMP=%[2]s
+APP=%[4]s
 REL="$BASE/releases/%[3]s"
 trap 'rm -f "$TMP"' EXIT
-mkdir -p "$BASE/releases"
+%[7]s
+mkdir -p "$BASE/releases" "$BASE/nginx" "$BASE/nginx-releases"
 mkdir "$REL" || { echo "Another deployment of this site started in the same second; wait a moment and retry." >&2; exit 1; }
 tar -xzf "$TMP" -C "$REL" --no-same-owner --no-same-permissions
 chmod -R a+rX "$REL"
+cat > "$BASE/nginx-releases/%[3]s.conf" <<'%[6]s'
+%[5]s
+%[6]s
+cat > "$BASE/nginx-releases/_default.conf" <<'%[6]s'
+%[8]s
+%[6]s
+chmod a+r "$BASE/nginx-releases/"*.conf
+hp_conf_install "$BASE/nginx-releases/%[3]s.conf" || { rm -rf "$REL" "$BASE/nginx-releases/%[3]s.conf"; echo "Deployment stopped before switching: the live site was not changed. Fix the rule nginx complains about (App Testing shows rule problems)." >&2; exit 1; }
 ln -sfn "releases/%[3]s" "$BASE/html.new"
 mv -Tf "$BASE/html.new" "$BASE/html" 2>/dev/null || { rm -f "$BASE/html.new"; rm -f "$BASE/html"; ln -s "releases/%[3]s" "$BASE/html"; }
+hp_reload
 cd "$BASE/releases"
 ls -1t | grep -v '^initial$' | tail -n +6 | xargs -r rm -rf --
-echo "live release: $(readlink "$BASE/html")"`, shellQuote(siteDir(slug)), shellQuote(remoteTmp), release)
+for f in "$BASE"/nginx-releases/*.conf; do r=$(basename "$f" .conf); [ "$r" = _default ] || [ -d "$BASE/releases/$r" ] || rm -f "$f"; done
+echo "live release: $(readlink "$BASE/html")"`, shellQuote(siteDir(slug)), shellQuote(remoteTmp), release, shellQuote(site.AppUUID), strings.TrimRight(conf, "\n"), delim, confShellFuncs, strings.TrimRight(defaultNginxConf(), "\n"))
 	if err := runRemote(ctx, script, j); err != nil {
 		return err
 	}
@@ -187,6 +285,30 @@ echo "live release: $(readlink "$BASE/html")"`, shellQuote(siteDir(slug)), shell
 		}
 		return nil
 	})
+	if !site.ConfMount && site.AppUUID != "" {
+		j.Logf("This site was created with HostPanel 0.1: adding the rules mount (%s/nginx -> /etc/nginx/conf.d) so _redirects/_headers work...", siteDir(slug))
+		api, err := newCoolify()
+		if err == nil {
+			err = api.AddDirectoryMount(site.AppUUID, siteDir(slug)+"/nginx", "/etc/nginx/conf.d")
+		}
+		if err != nil {
+			j.Logf("WARNING: could not add the mount (%v). Files are live, but redirect/header rules are not active yet; deploy again later to retry.", err)
+		} else {
+			_ = withConfig(func(c *Config) error {
+				if s := findSite(c, slug); s != nil {
+					s.ConfMount = true
+				}
+				return nil
+			})
+			if err := api.Deploy(site.AppUUID); err != nil {
+				j.Logf("WARNING: restart failed (%v); restart the site from the Sites tab to apply the rules.", err)
+			} else {
+				j.Logf("Restarting the container once to activate the mount (~30-60 s).")
+				j.Logf("Deployed. The new files are live now; the rules apply once the restart finishes.")
+				return nil
+			}
+		}
+	}
 	j.Logf("Deployed. Files are served immediately (no container restart needed).")
 	return nil
 }
@@ -215,12 +337,30 @@ func activateRelease(slug, release string) error {
 	if !releaseRe.MatchString(release) {
 		return errors.New("invalid release name")
 	}
+	c := snapshotConfig()
+	site := findSite(&c, slug)
+	if site == nil {
+		return errors.New("unknown site")
+	}
+	delim := "HPCONF_" + randHex(8)
 	script := fmt.Sprintf(`set -e
 BASE=%[1]s
+APP=%[3]s
+%[4]s
 test -d "$BASE/releases/%[2]s"
+if [ -d "$BASE/nginx" ]; then
+  mkdir -p "$BASE/nginx-releases"
+  cat > "$BASE/nginx-releases/_default.conf" <<'%[6]s'
+%[5]s
+%[6]s
+  CONF="$BASE/nginx-releases/%[2]s.conf"
+  [ -f "$CONF" ] || CONF="$BASE/nginx-releases/_default.conf"
+  hp_conf_install "$CONF" >/dev/null || { echo "nginx rejected the rules of release %[2]s; nothing was changed" >&2; exit 1; }
+fi
 ln -sfn "releases/%[2]s" "$BASE/html.new"
 mv -Tf "$BASE/html.new" "$BASE/html" 2>/dev/null || { rm -f "$BASE/html.new" "$BASE/html"; ln -s "releases/%[2]s" "$BASE/html"; }
-echo ok`, shellQuote(siteDir(slug)), release)
+hp_reload >/dev/null
+echo ok`, shellQuote(siteDir(slug)), release, shellQuote(site.AppUUID), confShellFuncs, strings.TrimRight(defaultNginxConf(), "\n"), delim)
 	out, err := runRemoteOutput(context.Background(), script)
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, out)
