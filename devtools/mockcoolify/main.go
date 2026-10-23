@@ -1,5 +1,5 @@
 // mockcoolify is a DEVELOPMENT-ONLY fake of the few Coolify API v1 endpoints
-// HostPanel uses. It checks auth, methods and required body fields as listed
+// Dilreet uses. It checks auth, methods and required body fields as listed
 // in Coolify's openapi.yaml, and logs every request. It is not part of the exe.
 package main
 

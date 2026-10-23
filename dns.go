@@ -60,13 +60,13 @@ func requiredRecords(domain string, www bool, ip string) []DNSRecord {
 	if !isApex(domain) {
 		name = strings.SplitN(domain, ".", 2)[0]
 	}
-	recs = append(recs, DNSRecord{Type: "A", Name: name, FQDN: domain, Value: ip, TTL: "300 (or Auto)"})
+	recs = append(recs, DNSRecord{Type: "A", Name: name, FQDN: domain, Value: ip, TTL: "lowest offered, or Auto"})
 	if www {
 		wname := "www"
 		if name != "@" {
 			wname = "www." + name
 		}
-		recs = append(recs, DNSRecord{Type: "A", Name: wname, FQDN: "www." + domain, Value: ip, TTL: "300 (or Auto)"})
+		recs = append(recs, DNSRecord{Type: "A", Name: wname, FQDN: "www." + domain, Value: ip, TTL: "lowest offered, or Auto"})
 	}
 	return recs
 }
