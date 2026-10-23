@@ -59,7 +59,7 @@ func stopTest() {
 
 // cleanupStaleWorkspaces removes temp folders left by a crashed run.
 func cleanupStaleWorkspaces() {
-	m, _ := filepath.Glob(filepath.Join(os.TempDir(), "hostpanel-test-*"))
+	m, _ := filepath.Glob(filepath.Join(os.TempDir(), "dilreet-test-*"))
 	for _, d := range m {
 		if st, err := os.Stat(d); err == nil && st.IsDir() && time.Since(st.ModTime()) > time.Hour {
 			os.RemoveAll(d)
@@ -187,9 +187,9 @@ func registerTestRoutes(mux *http.ServeMux) {
 			return
 		}
 		evs, _, _, _ := t.Log.since(0)
-		out := map[string]any{"hostpanel": Version, "report": t.Report, "browser_log": evs, "publish": t.WS}
+		out := map[string]any{"dilreet": Version, "report": t.Report, "browser_log": evs, "publish": t.WS}
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="hostpanel-test-report-%s.json"`, time.Now().Format("20060102-150405")))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="dilreet-test-report-%s.json"`, time.Now().Format("20060102-150405")))
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
 		enc.Encode(out)
