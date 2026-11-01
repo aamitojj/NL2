@@ -240,7 +240,9 @@ func (w *Workspace) detectPublish() {
 				break
 			}
 		}
-		if !found {
+		if !found && w.autoFixIndex(w.Root) {
+			choose("", "top level of the upload (home page fixed automatically)")
+		} else if !found {
 			choose("", "top level of the upload (no index.html found anywhere obvious)")
 		}
 	}

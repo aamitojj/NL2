@@ -39,6 +39,15 @@ type Site struct {
 	PendingNS   []string `json:"pending_ns,omitempty"`
 
 	Git *SiteGit `json:"git,omitempty"` // set when the site was imported from a repository
+
+	// v0.4 organisation (all optional; old configs load unchanged)
+	Group     string   `json:"group,omitempty"`     // Group.ID
+	Tags      []string `json:"tags,omitempty"`      // free labels, coloured via Config.TagColors
+	Pinned    bool     `json:"pinned,omitempty"`    // shown first and on the dashboard
+	Archived  bool     `json:"archived,omitempty"`  // hidden from the main list; the site keeps running
+	Framework string   `json:"framework,omitempty"` // detected at the last deploy
+	Notes     string   `json:"notes,omitempty"`
+	Template  string   `json:"template,omitempty"` // starter it was created from
 }
 
 // SiteGit links a site to a repository branch for "Pull latest and deploy"
@@ -92,6 +101,14 @@ type Config struct {
 	AIDefault   string             `json:"ai_default,omitempty"`    // "local:<id>|<model>" or "<provider>|<model>"
 	AINoContext bool               `json:"ai_no_context,omitempty"` // never attach app context to cloud requests
 	Notices     []Notice           `json:"notices,omitempty"`
+
+	// v0.4
+	ConfigVersion int               `json:"config_version,omitempty"`
+	Groups        []*Group          `json:"groups,omitempty"`
+	TagColors     map[string]string `json:"tag_colors,omitempty"`
+	Backup        *BackupSettings   `json:"backup,omitempty"`
+	SSLWarnDays   int               `json:"ssl_warn_days,omitempty"`
+	SetupHidden   bool              `json:"setup_hidden,omitempty"`
 
 	// Optional Git/Netlify accounts for private imports, keyed by host
 	// ("github.com", "gitlab.example.com", "dev.azure.com/org", "netlify").
@@ -208,8 +225,14 @@ func loadConfig() error {
 	if c.SSHPort == 0 {
 		c.SSHPort = 22
 	}
+	migrated := migrateConfig(c)
 	cfgMu.Lock()
 	cfg = c
+	if migrated {
+		if err := saveConfigLocked(); err != nil {
+			log.Printf("could not save upgraded settings: %v", err)
+		}
+	}
 	cfgMu.Unlock()
 	return nil
 }
@@ -255,6 +278,7 @@ func snapshotConfig() Config {
 			cp.Git = &g
 		}
 		cp.CFRecordIDs = append([]string(nil), s.CFRecordIDs...)
+		cp.Tags = append([]string(nil), s.Tags...)
 		c.Sites[i] = &cp
 	}
 	// Maps and slices are copied too, so readers never race with withConfig.
@@ -274,6 +298,19 @@ func snapshotConfig() Config {
 		c.GitAccounts[k] = &cp
 	}
 	c.Notices = append([]Notice(nil), cfg.Notices...)
+	c.Groups = make([]*Group, len(cfg.Groups))
+	for i, g := range cfg.Groups {
+		cp := *g
+		c.Groups[i] = &cp
+	}
+	c.TagColors = make(map[string]string, len(cfg.TagColors))
+	for k, v := range cfg.TagColors {
+		c.TagColors[k] = v
+	}
+	if cfg.Backup != nil {
+		b := *cfg.Backup
+		c.Backup = &b
+	}
 	return c
 }
 
