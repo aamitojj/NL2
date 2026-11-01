@@ -119,3 +119,16 @@ sent, and the "Include my status" switch can be turned off.
 * Buying a domain; for Guided mode, adding 1–2 records (or nameservers) at the registrar.
 * Approving each change (confirm cards).
 * The first Coolify admin password is shown once for you to save.
+
+## New in 0.4
+
+* **Health checks** — with background checks on, every site is opened every 10
+  minutes; you get a notification if it stops answering or its padlock (SSL)
+  certificate ends within the days set in *Settings → Backups & alerts* (default 14).
+* **Scheduled backups** — daily or weekly zip of every project's live files (and
+  optionally all saved deploys) to a folder you choose, keeping the last N. No
+  passwords or keys are ever written to a backup.
+* **Fix it** — the dashboard lists problems (failed deploy, stopped site, server
+  not connected, domain not working) with one button each. Buttons that change the
+  server (restart, redeploy) ask you to confirm first.
+* **Bulk redeploy** asks for a confirm and runs as one job with a log.

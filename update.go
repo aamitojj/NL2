@@ -21,7 +21,7 @@ import (
 
 // Version is the app version. It is a constant in spirit; it is a var only so
 // release builds can set it with -ldflags "-X main.Version=x.y.z".
-var Version = "0.3.0"
+var Version = "0.4.0"
 
 const defaultManifestURL = "https://example.com/dilreet/latest.json"
 
