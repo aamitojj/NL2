@@ -83,7 +83,9 @@ func backgroundTick(ctx context.Context, now time.Time) {
 	if now.Sub(bg.lastHealth) > 10*time.Minute {
 		bg.lastHealth = now
 		healthTick()
+		go runHealthFor(nil)
 	}
+	backupTick(now)
 	if now.Sub(bg.lastUpdate) > 24*time.Hour {
 		bg.lastUpdate = now
 		if m, err := fetchManifest(); err == nil && compareVersions(m.Version, Version) > 0 && bg.notifiedVer != m.Version {

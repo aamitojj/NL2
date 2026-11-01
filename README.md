@@ -1,4 +1,4 @@
-# Dilreet v0.3
+# Dilreet v0.4
 
 <img src="web/icon.png" width="64" align="right" alt="">
 
@@ -7,6 +7,20 @@ Drop a folder, paste a GitHub link or import from Netlify, and your site is onli
 with HTTPS in a minute. Under the hood it sets up and drives
 [Coolify](https://coolify.io) on a VPS for you. You don't need Docker, the
 command line or GitHub.
+
+**New in 0.4** (see [docs/RESEARCH.md](docs/RESEARCH.md))
+
+* **Dashboard** — counts, a *Getting started* checklist, *Needs your attention* with
+  **Fix it** buttons, pinned projects and recent deploys.
+* **Organised** — groups (shown in the left menu), coloured tags, pins, search,
+  filters (status, tag, built with), sort, card or list view, and archive.
+* **Bulk actions** — select many projects to pin, move, tag, check, redeploy or archive.
+* **Templates** — shop, portfolio, link-in-bio, restaurant menu, event, coming soon, blank.
+* **Automatic** — health and padlock (SSL) checks with notifications, scheduled backups
+  (*Settings → Backups & alerts*), duplicate a project, *Visitors & logs* from the server log.
+* **Easier words** — plain language, tooltips for words like DNS and SSL, empty states,
+  light/dark theme. Old settings are migrated automatically.
+* Every server or DNS change still asks you to confirm first.
 
 **New in 0.3**
 
