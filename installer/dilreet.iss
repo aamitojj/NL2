@@ -1,6 +1,6 @@
-; Inno Setup script for Dilreet. Build: iscc /DAppVersion=0.3.0 installer\dilreet.iss
+; Inno Setup script for Dilreet. Build: iscc /DAppVersion=0.4.0 installer\dilreet.iss
 #ifndef AppVersion
-  #define AppVersion "0.3.0"
+  #define AppVersion "0.4.0"
 #endif
 [Setup]
 AppId={{8C4C3B9E-5D7A-4A8E-9F3B-D1E2E7A0B3C1}
