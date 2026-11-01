@@ -1,5 +1,5 @@
 "use strict";
-// Dilreet 0.3 UI. Same API and security model as 0.2: every request sends
+// Dilreet 0.4 UI (see v04.js for dashboard, organisation, templates, logs). Same API and security model as 0.2: every request sends
 // X-Dilreet: 1, the session cookie is HttpOnly, and nothing here talks to
 // any host other than this local server (CSP connect-src 'self').
 const $ = (s, el) => (el || document).querySelector(s);
@@ -140,7 +140,7 @@ const routes = [];
 function route(re, fn, nav) { routes.push({ re, fn, nav }); }
 let curRoute = "";
 async function render() {
-  const hash = location.hash || "#/projects";
+  const hash = location.hash || "#/dashboard";
   const path = hash.slice(1).split("#")[0];
   const anchor = hash.slice(1).split("#")[1];
   if (path === curRoute && !render.force) return;
@@ -160,7 +160,7 @@ async function render() {
     if (anchor) { const el = document.getElementById(anchor); if (el) el.scrollIntoView(); } else $("#main").scrollTop = 0;
     return;
   }
-  location.hash = "#/projects";
+  location.hash = "#/dashboard";
 }
 window.addEventListener("hashchange", render);
 function go(hash) { if (location.hash === hash) { render.force = true; render(); } else location.hash = hash; }
@@ -388,36 +388,7 @@ async function coolifyForm(el, onDone) {
   });
 }
 
-// ---------- sites list ----------
-route(/^\/projects$/, async () => {
-  await refreshOverview();
-  const v = view();
-  v.innerHTML = `<div class="head"><h1>Projects</h1><span class="grow"></span><a class="btn primary" href="#/new">Add new project</a></div><div id="sl"><p class="muted">Loading&hellip;</p></div>`;
-  if (ov.stage === "no_server" || ov.stage === "no_engine") {
-    if (!ov.site_count) { go("#/setup"); return; }
-  }
-  await loadSites();
-  const sl = $("#sl");
-  if (!sites.length) {
-    sl.innerHTML = `<div class="card empty-hero"><div class="hero-ic" aria-hidden="true">&#128640;</div><h2>Put your first project online</h2>
-      <p class="muted">Drag in a folder or .zip, import from GitHub, GitLab or a link, or move a site from Netlify. It is live in about a minute on a free https address.</p>
-      <p><a class="btn primary lg" href="#/new">Add new project</a></p>
-      <p class="small muted"><a href="#/new/git">Import from Git</a> &middot; <a href="#/new/netlify">Import from Netlify</a> &middot; <button class="linkish" type="button" id="eAsk">Ask Jiv how it works</button></p></div>`;
-    $("#eAsk").onclick = () => jivAsk("How do I put my first website online with Dilreet?");
-    return;
-  }
-  sl.innerHTML = `${sitesErr ? `<div class="alert warn">Live status is unavailable: ${esc(sitesErr)}</div>` : ""}
-    <div class="toolbar"><input type="search" id="q" placeholder="Search projects" aria-label="Search projects"><span class="grow"></span><span class="muted small" id="cnt"></span></div>
-    <div class="sitelist" id="list"></div>`;
-  const draw = () => {
-    const q = $("#q").value.toLowerCase();
-    const list = sites.filter(s => !q || (s.name + " " + s.slug + " " + (s.domain || "")).toLowerCase().includes(q));
-    $("#cnt").textContent = `${list.length} of ${sites.length} projects`;
-    $("#list").innerHTML = list.map(s => `<a class="siterow" href="#/project/${esc(s.slug)}">${thumb(s.name)}<div class="t"><b>${esc(s.name)}</b><div class="u">${esc((siteURL(s) || "no address yet").replace(/^https?:\/\//, ""))}${s.domain && !s.domain_live ? ` &middot; <span class="badge warn">${esc(s.domain)}: waiting for DNS</span>` : ""}</div></div>
-      <div class="meta">${statusBadge(s)}${s.git ? ` <span class="badge info" title="${esc(s.git.display)}">&#128279; ${esc(s.git.branch || "git")}${s.git.auto_deploy ? " · auto" : ""}</span>` : ""}${s.watch ? ` <span class="badge info">watching folder</span>` : ""}<div>Deployed ${esc(ago(s.last_deploy))}</div></div></a>`).join("") || `<div class="empty">No project matches.</div>`;
-  };
-  $("#q").oninput = draw; draw();
-}, "projects");
+// ---------- sites list: see v04.js ----------
 route(/^\/sites(?:\/new)?$/, async () => { location.replace(location.hash.includes("new") ? "#/new" : "#/projects"); }, "projects");
 route(/^\/site\/([^/]+)(\/domain)?$/, async (slug, d) => { location.replace(`#/project/${encodeURIComponent(slug)}${d || ""}`); }, "projects");
 route(/^\/assistant$/, async () => { location.replace("#/jiv"); }, "assistant");
@@ -630,7 +601,8 @@ route(/^\/review$/, async () => {
       <label class="switch"><input type="checkbox" id="pTest" ${store("testFirst") ? "checked" : ""}> Test before publishing <span class="muted small">(opens App Testing with a preview on this PC first)</span></label>
       ${repoKind ? `<label class="switch"><input type="checkbox" id="pAuto" checked> Deploy automatically when the repository changes</label>
         <div class="row small" id="pAutoOpts" style="margin-left:52px">Check every <input type="number" id="pInt" value="5" min="1" max="1440" style="width:80px"> minutes</div>` : ""}
-      ${s.kind === "upload" && s.local_path ? `<label class="switch"><input type="checkbox" id="pWatch" checked> Watch <code>${esc(s.local_path)}</code> and redeploy when files change</label>` : ""}
+      ${!target ? reviewOrgFields(s) : ""}
+      ${s.kind === "upload" && s.local_path && !s.template && !s.copy_of ? `<label class="switch"><input type="checkbox" id="pWatch" checked> Watch <code>${esc(s.local_path)}</code> and redeploy when files change</label>` : ""}
       <div class="row" style="margin-top:12px"><button id="pGo" class="primary lg">Publish</button><button id="pCancel" class="ghost">Cancel</button><span id="pNote" class="small muted"></span></div>
       <div id="pJob"></div></div>`;
   const nameEl = $("#pName");
@@ -657,7 +629,7 @@ route(/^\/review$/, async () => {
   pubReady();
   $("#pGo").onclick = (e) => busy(e.target, async () => {
     const slug = target ? target.slug : ($("#pExisting") && $("#pExisting").value) || "";
-    const opts = { slug, name: nameEl ? nameEl.value.trim() : "", auto_deploy: !!($("#pAuto") && $("#pAuto").checked), interval_min: $("#pInt") ? +$("#pInt").value : 5, test_first: $("#pTest").checked, watch: !!($("#pWatch") && $("#pWatch").checked) };
+    const opts = { slug, name: nameEl ? nameEl.value.trim() : "", auto_deploy: !!($("#pAuto") && $("#pAuto").checked), interval_min: $("#pInt") ? +$("#pInt").value : 5, test_first: $("#pTest").checked, watch: !!($("#pWatch") && $("#pWatch").checked), group: $("#pGroup") ? $("#pGroup").value : (s.group || ""), tags: s.tags || [], template: s.template || "" };
     if ($("#pTest").checked) {
       const t = await api("POST", `/api/import/${s.import_id}/test`);
       pendingImport = { id: s.import_id, opts, sum: s, label: target ? target.name : (opts.name || s.suggested_name) };
@@ -967,23 +939,30 @@ $("#tDeploy").onclick = (e) => busy(e.target, async () => {
 
 // ---------- project pages (Overview / Files / Deploys / Domain / Settings) ----------
 async function getSite(slug) { await loadSites(); const s = sites.find(x => x.slug === slug); if (!s) throw new Error("Project not found: " + slug); return s; }
-const projTabs = [["", "Overview"], ["files", "Files"], ["deploys", "Deploys"], ["domain", "Domain"], ["settings", "Settings"]];
+const projTabs = [["", "Overview", "&#127968;"], ["deploys", "Deploys", "&#128640;"], ["files", "Files", "&#128193;"], ["domain", "Domains", "&#127760;"], ["logs", "Visitors & logs", "&#128200;"], ["settings", "Settings", "&#9881;"]];
 function projectHead(s, tab) {
   const url = siteURL(s);
-  return `<div class="crumbs"><a href="#/projects">Projects</a> /</div>
-    <div class="head">${thumb(s.name)}<div><h1 style="margin:0">${esc(s.name)}</h1>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="small">${esc(url.replace(/^https?:\/\//, ""))} &#8599;</a>` : `<span class="muted small">no address yet</span>`}</div><span class="grow"></span>${statusBadge(s)}${url ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open site</a>` : ""}</div>
-    <nav class="ptabs" aria-label="Project">${projTabs.map(([k, l]) => `<a href="#/project/${esc(s.slug)}${k ? "/" + k : ""}" ${k === (tab || "") ? 'aria-current="page"' : ""}>${l}</a>`).join("")}</nav>`;
+  const grp = (orgCache.groups || []).find(g => g.id === s.group);
+  return `<div class="crumbs"><a href="#/projects">Projects</a> /${grp ? ` <a href="#/projects/g/${esc(grp.id)}">${esc(grp.name)}</a> /` : ""}</div>
+    <div class="head">${thumb(s.name)}<div style="min-width:0"><h1 style="margin:0">${esc(s.name)} <button class="star ${s.pinned ? "on" : ""}" data-pin="${esc(s.slug)}" title="${s.pinned ? "Unpin" : "Pin to the top and the dashboard"}" aria-pressed="${!!s.pinned}">${s.pinned ? "&#9733;" : "&#9734;"}</button></h1>${url ? `<a href="${esc(url)}" target="_blank" rel="noopener" class="small">${esc(url.replace(/^https?:\/\//, ""))} &#8599;</a>` : `<span class="muted small">no address yet</span>`} ${tagChips(s.tags)}</div><span class="grow"></span>${s.archived ? `<span class="badge">Archived</span>` : ""}${statusBadge(s)}${url ? `<a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Open site</a>` : ""}</div>`;
+}
+// projectShell: Netlify-style project page with a left sub-menu.
+function projectShell(s, tab, inner) {
+  return projectHead(s, tab) + `<div class="plyt"><nav class="psub" aria-label="Project menu">${projTabs.map(([k, l, ic]) => `<a href="#/project/${esc(s.slug)}${k ? "/" + k : ""}" ${k === (tab || "") ? 'aria-current="page"' : ""}><span aria-hidden="true">${ic}</span>${l}</a>`).join("")}
+    <a href="#/testing" data-testsite="${esc(s.slug)}"><span aria-hidden="true">&#129514;</span>Test a version</a></nav><div class="pmain">${inner}</div></div>`;
 }
 function fmtTime(t) { if (!t) return ""; const d = new Date(t); return isNaN(d) ? t : d.toLocaleString(); }
 const srcLabel = { drop: "Drag & drop", folder: "Project folder", git: "Git", netlify: "Netlify", watch: "Watched folder", archive: "Re-published" };
 function checksBadges(c) { if (!c) return ""; return `${c.fail ? `<span class="badge bad">${c.fail} failed</span>` : ""}${c.warn ? `<span class="badge warn">${c.warn} warnings</span>` : ""}${!c.fail && !c.warn ? `<span class="badge ok">checks passed</span>` : ""}`; }
 
-route(/^\/project\/([^/]+)(?:\/(files|deploys|settings))?$/, async (slug, tab) => {
+route(/^\/project\/([^/]+)(?:\/(files|deploys|settings|logs))?$/, async (slug, tab) => {
   await refreshOverview();
+  await loadOrg();
   const s = await getSite(slug);
   const v = view();
-  v.innerHTML = projectHead(s, tab) + `${sitesErr ? `<div class="alert warn small">Live status unavailable: ${esc(sitesErr)}</div>` : ""}<div id="pBody"></div>`;
+  v.innerHTML = projectShell(s, tab, `${sitesErr ? `<div class="alert warn small">Live status unavailable: ${esc(sitesErr)}</div>` : ""}<div id="pBody"></div>`);
   const b = $("#pBody");
+  if (tab === "logs") return projectLogs(s, b);
   if (tab === "files") return projectFiles(s, b);
   if (tab === "deploys") return projectDeploys(s, b);
   if (tab === "settings") return projectSettings(s, b);
@@ -992,7 +971,7 @@ route(/^\/project\/([^/]+)(?:\/(files|deploys|settings))?$/, async (slug, tab) =
 
 function projectOverview(s, b) {
   const g = s.git;
-  b.innerHTML = `<div class="grid2">
+  b.innerHTML = `<div id="pHealth"></div><div class="grid2">
       <div class="card"><h2>Deploy a new version</h2><div id="sdz"></div></div>
       <div class="card"><h2>Domain</h2>${s.domain ? `<p><b>${esc(s.domain)}</b>${s.include_www ? " + www" : ""} ${s.domain_live ? (s.https_active ? `<span class="badge ok">HTTPS active</span>` : `<span class="badge warn">connected, HTTPS pending</span>`) : `<span class="badge warn">waiting for DNS</span>`}${s.dns_mode === "cloudflare" ? ` <span class="badge info">Cloudflare DNS</span>` : ""}${s.dns_provider ? ` <span class="badge info">${esc(s.dns_provider)} API</span>` : ""}</p>` : `<p class="muted">No custom domain yet.</p>`}
         ${(s.pending_ns || []).length ? `<div class="alert info small">Waiting for the nameserver change: ${s.pending_ns.map(n => `<code>${esc(n)}</code>`).join(" ")}</div>` : ""}
@@ -1011,6 +990,7 @@ function projectOverview(s, b) {
         <div class="row"><button id="pOpen" class="sm">Open in File Explorer</button><a class="btn sm ghost" href="#/project/${esc(s.slug)}/files">Browse files</a></div></div>
     </div>`;
   dropZone($("#sdz"), { compact: true, slug: s.slug });
+  projectHealthCard(s, $("#pHealth"));
   api("GET", `/api/projects/${s.slug}/deploys`).then(r => {
     $("#pDir").textContent = r.dir;
     const l = (r.deploys || []).slice(0, 3);
@@ -1134,17 +1114,18 @@ async function projectDeploys(s, b) {
 }
 
 function projectSettings(s, b) {
-  b.innerHTML = `<div class="card"><h2>Project settings</h2>
+  b.innerHTML = `<div id="sOrg"></div><div class="card"><h2>Project settings</h2>
       <div class="field"><label for="sName">Name</label><div class="row"><input id="sName" value="${esc(s.name)}" style="flex:1"><button id="sRen">Rename</button></div></div>
       <label class="switch"><input type="checkbox" id="sWatch" ${s.watch ? "checked" : ""}> Watch a folder on this PC and redeploy when it changes</label>
       <div class="row" style="margin-left:52px"><input id="sWPath" value="${esc(s.watch_path || s.last_source || "")}" placeholder="C:\\Sites\\${esc(s.slug)}\\dist" style="flex:1"></div>
-      <div class="row" style="margin-top:12px"><button id="sRestart">Restart container</button><a class="btn ghost" href="#/testing">Test a version first</a><a class="btn ghost" href="#/settings/storage">Storage settings</a></div>
+      <div class="row" style="margin-top:12px"><button id="sRestart">Restart the site</button><a class="btn ghost" href="#/testing">Test a version first</a><a class="btn ghost" href="#/settings/storage">Storage settings</a></div>
       <div class="kv small muted" style="margin-top:12px"><div>Project id</div><div><code>${esc(s.slug)}</code></div><div>Folder</div><div><code>${esc(s.folder || "")}</code></div><div>Created</div><div>${esc(ago(s.created_at))}</div><div>Coolify app</div><div><code>${esc(s.app_uuid || "")}</code></div></div>
     </div>
     <div class="card danger-zone"><h2>Danger zone</h2><label class="check"><input type="checkbox" id="sKeep"> Keep the files on the server</label><p class="small muted">The project folder on this PC (with all saved deploys) is never deleted by Dilreet.</p><div class="row"><button id="sDel" class="danger">Delete project</button></div><div id="sJob"></div></div>`;
+  projectOrganise(s, $("#sOrg"));
   $("#sRen").onclick = (e) => busy(e.target, async () => { await api("POST", `/api/sites/${s.slug}/rename`, { name: $("#sName").value }); toast("Renamed", "success"); rerender(); });
   $("#sWatch").onchange = (e) => api("POST", `/api/sites/${s.slug}/watch`, { enabled: e.target.checked, path: $("#sWPath").value.trim() }).then(() => toast(e.target.checked ? "Watching the folder: changes deploy automatically" : "Stopped watching", "success")).catch(x => { e.target.checked = !e.target.checked; err(x); });
-  $("#sRestart").onclick = (e) => busy(e.target, async () => { if (!await confirmBox("Restart the container?", "Coolify restarts the web server for this site. It is offline for a few seconds.", "Restart")) return; await api("POST", `/api/sites/${s.slug}/restart`); toast("Restart queued", "success"); });
+  $("#sRestart").onclick = (e) => busy(e.target, async () => { if (!await confirmBox("Restart the site?", "The small web server that shows this site on your server is restarted. The site is offline for a few seconds.", "Restart")) return; await api("POST", `/api/sites/${s.slug}/restart`); toast("Restart queued", "success"); });
   $("#sDel").onclick = async (e) => {
     const keep = $("#sKeep").checked;
     if (!await typedConfirm("Delete " + s.name + "?", `<p>This removes the project from your server${keep ? " (the files stay in /data/hostpanel/sites/" + esc(s.slug) + ")" : " including all its files and server releases"}. ${s.dns_mode === "cloudflare" ? "Its Cloudflare DNS records are removed too." : ""} The copies on this PC stay. This cannot be undone.</p>`, s.slug, "Delete project")) return;
@@ -1170,15 +1151,16 @@ async function pullDeploy(slug, allowBuild, el) {
 // ---------- domain wizard ----------
 route(/^\/project\/([^/]+)\/domain$/, async (slug) => {
   await refreshOverview();
+  await loadOrg();
   const s = await getSite(slug);
   const v = view();
   const pre = s.domain || store("prefillDomain-" + slug) || "";
-  v.innerHTML = projectHead(s, "domain") + `
+  v.innerHTML = projectShell(s, "domain", `
     ${stepsBar0(s)}
     <div class="card"><h2>1. Your domain</h2><div class="row"><input id="dDom" value="${esc(pre)}" placeholder="example.com" style="flex:1" aria-label="Domain name" autofocus><label class="check"><input type="checkbox" id="dWww" ${s.domain ? (s.include_www ? "checked" : "") : "checked"}> also www</label><button id="dNext" class="primary">Continue</button></div>
       <p class="hint">Use a domain you own (GoDaddy, Namecheap, Porkbun, Hostinger, Squarespace, Cloudflare, &hellip;). Dilreet finds out where it is managed and shows you the easiest way. <button class="linkish" id="dAsk" type="button">Ask Jiv to walk me through it</button></p></div>
     ${(s.pending_ns || []).length ? `<div class="alert info">Waiting for the nameserver change to Cloudflare (${s.pending_ns.map(n => `<code>${esc(n)}</code>`).join(", ")}). This can take from a few minutes up to 24 hours; Dilreet keeps checking.</div>` : ""}
-    <div id="dStep2"></div><div id="dStep3"></div>`;
+    <div id="dStep2"></div><div id="dStep3"></div>`);
   const dom = () => $("#dDom").value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
   $("#dNext").onclick = (e) => busy(e.target, () => domainStep2(s, dom(), $("#dWww").checked));
   $("#dDom").onkeydown = (e) => { if (e.key === "Enter") $("#dNext").click(); };
@@ -1689,8 +1671,8 @@ function chatFetch(body) {
 }
 
 // ---------- settings ----------
-const settingsTabs = [["general", "General"], ["server", "Server"], ["storage", "Storage"], ["ai", "Connect AI"], ["git", "Git & Netlify"], ["updates", "Updates"]];
-route(/^\/settings(?:\/(server|storage|ai|git|updates))?$/, async (tab) => {
+const settingsTabs = [["general", "General"], ["organise", "Groups & tags"], ["backups", "Backups & alerts"], ["server", "Server"], ["storage", "Storage"], ["ai", "Connect AI"], ["git", "Git & Netlify"], ["updates", "Updates"]];
+route(/^\/settings(?:\/(server|storage|ai|git|updates|organise|backups))?$/, async (tab) => {
   tab = tab || "general";
   await refreshOverview();
   state = await api("GET", "/api/state").catch(() => ({}));
@@ -1699,7 +1681,7 @@ route(/^\/settings(?:\/(server|storage|ai|git|updates))?$/, async (tab) => {
     <div class="tabs" role="tablist">${settingsTabs.map(([k, l]) => `<button role="tab" data-t="${k}" aria-selected="${k === tab}">${l}</button>`).join("")}</div><div id="sBody" role="tabpanel"></div>`;
   $$(".tabs button", v).forEach(b => b.onclick = () => go(b.dataset.t === "general" ? "#/settings" : "#/settings/" + b.dataset.t));
   const body = $("#sBody");
-  ({ general: setGeneral, server: setServer, storage: setStorage, ai: setAI, git: setGit, updates: setUpdates })[tab](body);
+  ({ general: setGeneral, organise: setOrganise, backups: setBackups, server: setServer, storage: setStorage, ai: setAI, git: setGit, updates: setUpdates })[tab](body);
 }, "settings");
 
 function setGeneral(el) {
@@ -1847,7 +1829,7 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#not
 initJiv();
 (async () => {
   await refreshOverview();
-  if (!location.hash || location.hash === "#") location.hash = (ov.stage === "no_server" || ov.stage === "no_engine") && !ov.site_count ? "#/setup" : "#/projects";
+  if (!location.hash || location.hash === "#") location.hash = (ov.stage === "no_server" || ov.stage === "no_engine") && !ov.site_count ? "#/setup" : "#/dashboard";
   else render();
   setInterval(refreshOverview, 15000);
 })();
