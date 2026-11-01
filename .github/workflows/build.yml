@@ -11,12 +11,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
-      - name: Decode binary assets
+      - name: Decode icons
         shell: bash
-        run: |
-          tr -d "\r" < assets/web_icon.png.b64 | base64 -d > web/icon.png
-          tr -d "\r" < assets/winres_icon.ico.b64 | base64 -d > winres/icon.ico
-          tr -d "\r" < assets/winres_icon.png.b64 | base64 -d > winres/icon.png
+        run: for f in web/icon.png winres/icon.ico winres/icon.png; do tr -d "\r" < "$f.b64" | base64 -d > "$f"; done
       - run: gofmt -l . | tee /dev/stderr | (! read)
       - run: go vet ./... && GOOS=windows go vet ./...
       - run: go test -race ./...
@@ -27,20 +24,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod }
-      - name: Decode binary assets
+      - name: Decode icons
         shell: bash
-        run: |
-          tr -d "\r" < assets/web_icon.png.b64 | base64 -d > web/icon.png
-          tr -d "\r" < assets/winres_icon.ico.b64 | base64 -d > winres/icon.ico
-          tr -d "\r" < assets/winres_icon.png.b64 | base64 -d > winres/icon.png
+        run: for f in web/icon.png winres/icon.ico winres/icon.png; do tr -d "\r" < "$f.b64" | base64 -d > "$f"; done
+      - name: Windows resources (icon, manifest)
+        shell: bash
+        run: go run github.com/tc-hib/go-winres@latest make --in winres/winres.json --product-version "${GITHUB_REF_NAME#v}" --file-version "${GITHUB_REF_NAME#v}" || go run github.com/tc-hib/go-winres@latest make --in winres/winres.json
       - name: Version
         shell: bash
         run: |
-          v="${GITHUB_REF_NAME#v}"; [[ "$GITHUB_REF_TYPE" == tag ]] || v="0.3.0"
+          v="${GITHUB_REF_NAME#v}"; [[ "$GITHUB_REF_TYPE" == tag ]] || v="0.4.0"
           echo "VER=$v" >> "$GITHUB_ENV"
-      - name: Generate icon/version resource (go-winres)
-        shell: bash
-        run: go run github.com/tc-hib/go-winres@v0.3.3 make --in winres/winres.json --arch amd64 --out rsrc
       - name: Build dilreet.exe
         shell: bash
         env: { GOOS: windows, GOARCH: amd64, CGO_ENABLED: "0" }
