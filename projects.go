@@ -346,6 +346,14 @@ func archiveDeploy(j *Job, slug string, ws *Workspace) *DeployRecord {
 		j.Logf("WARNING: could not update the deploy history: %v", err)
 	}
 	j.Logf("Saved a copy of this deploy on this PC: %s", zp)
+	if fw := ws.Project.Framework; fw != "" {
+		_ = withConfig(func(c *Config) error {
+			if st := findSite(c, slug); st != nil {
+				st.Framework = fw
+			}
+			return nil
+		})
+	}
 	return rec
 }
 

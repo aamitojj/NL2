@@ -506,13 +506,16 @@ func registerImportRoutes(mux *http.ServeMux) {
 	})
 	mux.HandleFunc("POST /api/import/{id}/deploy", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Slug        string `json:"slug"`
-			Name        string `json:"name"`
-			AutoDeploy  bool   `json:"auto_deploy"`
-			TestFirst   bool   `json:"test_first"`
-			IntervalMin int    `json:"interval_min"`
-			AcceptFails bool   `json:"accept_fails"`
-			Watch       bool   `json:"watch"`
+			Slug        string   `json:"slug"`
+			Name        string   `json:"name"`
+			AutoDeploy  bool     `json:"auto_deploy"`
+			TestFirst   bool     `json:"test_first"`
+			IntervalMin int      `json:"interval_min"`
+			AcceptFails bool     `json:"accept_fails"`
+			Watch       bool     `json:"watch"`
+			Group       string   `json:"group"`
+			Tags        []string `json:"tags"`
+			Template    string   `json:"template"`
 		}
 		if err := readJSON(r, &req); err != nil {
 			writeErr(w, err)
@@ -565,6 +568,14 @@ func registerImportRoutes(mux *http.ServeMux) {
 				if err := createSiteJob(j, name, slug); err != nil {
 					return err
 				}
+				_ = withConfig(func(c *Config) error {
+					if st := findSite(c, slug); st != nil {
+						g := req.Group
+						_ = applyMeta(c, st, SiteMeta{Group: &g, Tags: &req.Tags})
+						st.Template = req.Template
+					}
+					return nil
+				})
 			}
 			rep := runChecks(ws)
 			j.Logf("Checks: %d passed, %d warnings, %d failed.", rep.Counts["pass"], rep.Counts["warn"], rep.Counts["fail"])

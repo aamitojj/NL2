@@ -267,6 +267,12 @@ func routes() http.Handler {
 	registerAutomationRoutes(mux)
 	registerTestRoutes(mux)
 	registerProjectRoutes(mux)
+	registerOrgRoutes(mux)
+	registerHealthRoutes(mux)
+	registerBackupRoutes(mux)
+	registerLogRoutes(mux)
+	registerDashboardRoutes(mux)
+	registerTemplateRoutes(mux)
 	registerRegistrarRoutes(mux)
 	mux.HandleFunc("POST /api/server", apiSaveServer)
 	mux.HandleFunc("POST /api/ssh/connect", apiSSHConnect)
@@ -588,9 +594,13 @@ func apiSites(w http.ResponseWriter, r *http.Request) {
 	c := snapshotConfig()
 	type row struct {
 		*Site
-		Status string `json:"status"`
-		FQDN   string `json:"fqdn"`
+		Status     string        `json:"status"`
+		FQDN       string        `json:"fqdn"`
+		State      string        `json:"state"` // live | down | busy | unknown | new
+		Health     *HealthResult `json:"health,omitempty"`
+		LastStatus string        `json:"last_status,omitempty"`
 	}
+	health := healthSnapshot()
 	rows := make([]row, 0, len(c.Sites))
 	status := map[string]CApp{}
 	apiErr := ""
@@ -613,7 +623,17 @@ func apiSites(w http.ResponseWriter, r *http.Request) {
 		} else if apiErr == "" {
 			st = "missing in Coolify"
 		}
-		rows = append(rows, row{Site: s, Status: st, FQDN: a.FQDN})
+		rw := row{Site: s, Status: st, FQDN: a.FQDN, State: liveState(st)}
+		if s.LastDeploy == "" {
+			rw.State = "new"
+		}
+		if h, ok := health[s.Slug]; ok {
+			rw.Health = &h
+		}
+		if d := lastDeployOf(&c, s); d != nil {
+			rw.LastStatus = d.Status
+		}
+		rows = append(rows, rw)
 	}
 	writeJSON(w, 200, map[string]any{"sites": rows, "api_error": apiErr, "server_ip": c.ServerIP})
 }
